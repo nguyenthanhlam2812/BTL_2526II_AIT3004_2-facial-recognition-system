@@ -1,40 +1,4 @@
-# ai-facial-recognition
 
-Repo nay dang duoc to chuc theo xuong song cua du an, nhung hien chi bao gom nhung phan da hoan thanh o Phase 1 va Phase 2.
-
-- `docs/`: tai lieu da giu lai cho scope, architecture, deliverable va proposal
-- `recognition/`: logic AI dung chung cho detect + embedding
-- `scripts/poc/`: diem chay PoC local cho Phase 2
-
-## Repo Layout
-
-```text
-.
-|-- docs/
-|   |-- project-scope.md
-|   |-- architecture.md
-|   |-- api-contract.md
-|   |-- backlog.md
-|   |-- demo-data.md
-|   |-- registration-note.md
-|   |-- tech-stack.md
-|   `-- ...
-|-- data/
-|   `-- demo/
-|-- recognition/
-|   `-- pipelines/
-|       |-- face_detect_embed.py
-|       `-- cosine_similarity_eval.py
-|-- requirements/
-|   `-- poc.txt
-|-- scripts/
-|   `-- poc/
-|       |-- face_detect_embed.py
-|       `-- cosine_similarity_eval.py
-|-- artifacts/        # generated locally, ignored by git
-|-- .gitignore
-`-- README.md
-```
 
 ## Current Focus
 
