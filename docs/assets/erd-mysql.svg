@@ -1,0 +1,128 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="1700" height="1120" viewBox="0 0 1700 1120" role="img" aria-labelledby="title desc">
+  <title id="title">ERD MySQL cho hệ thống chấm công khuôn mặt</title>
+  <desc id="desc">Sơ đồ thực thể quan hệ gồm users, employees, enrollments, enrollment_images và attendance_events.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f6f1e8; }
+      .title { font: 700 30px "Segoe UI", Arial, sans-serif; fill: #1f2937; }
+      .subtitle { font: 400 15px "Segoe UI", Arial, sans-serif; fill: #4b5563; }
+      .box { fill: #fffdf9; stroke: #294b5a; stroke-width: 2.5; rx: 16; ry: 16; }
+      .header { fill: #294b5a; rx: 16; ry: 16; }
+      .header-text { font: 700 20px "Segoe UI", Arial, sans-serif; fill: #ffffff; letter-spacing: 0.5px; }
+      .field { font: 15px "Consolas", "Courier New", monospace; fill: #111827; }
+      .field-muted { font: 15px "Consolas", "Courier New", monospace; fill: #475569; }
+      .pk { font: 700 15px "Consolas", "Courier New", monospace; fill: #a21caf; }
+      .fk { font: 700 15px "Consolas", "Courier New", monospace; fill: #1d4ed8; }
+      .rel { fill: none; stroke: #d97706; stroke-width: 3.5; }
+      .rel-chip { fill: #fff7ed; stroke: #f59e0b; stroke-width: 1.5; rx: 10; ry: 10; }
+      .rel-main { font: 700 14px "Segoe UI", Arial, sans-serif; fill: #92400e; }
+      .rel-sub { font: 600 13px "Segoe UI", Arial, sans-serif; fill: #b45309; }
+      .legend-label { font: 600 14px "Segoe UI", Arial, sans-serif; fill: #334155; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1700" height="1120"/>
+  <text class="title" x="60" y="60">ERD Draft cho MySQL</text>
+  <text class="subtitle" x="60" y="90">Bản SVG tĩnh để dùng trong báo cáo và slide; nguồn chỉnh sửa vẫn nằm ở Mermaid trong docs/diagrams.md.</text>
+
+  <!-- USERS -->
+  <rect class="box" x="60" y="150" width="360" height="320"/>
+  <rect class="header" x="60" y="150" width="360" height="58"/>
+  <text class="header-text" x="88" y="187">USERS</text>
+  <text class="pk" x="86" y="248">id bigint PK</text>
+  <text class="field" x="86" y="282">username varchar UK</text>
+  <text class="field" x="86" y="316">password_hash varchar</text>
+  <text class="field" x="86" y="350">role varchar</text>
+  <text class="field" x="86" y="384">is_active boolean</text>
+  <text class="field-muted" x="86" y="418">created_at datetime</text>
+  <text class="field-muted" x="86" y="452">updated_at datetime</text>
+
+  <!-- EMPLOYEES -->
+  <rect class="box" x="480" y="150" width="420" height="352"/>
+  <rect class="header" x="480" y="150" width="420" height="58"/>
+  <text class="header-text" x="510" y="187">EMPLOYEES</text>
+  <text class="pk" x="506" y="248">id bigint PK</text>
+  <text class="field" x="506" y="282">employee_code varchar UK</text>
+  <text class="field" x="506" y="316">full_name varchar</text>
+  <text class="field" x="506" y="350">department varchar</text>
+  <text class="field" x="506" y="384">position varchar</text>
+  <text class="field" x="506" y="418">status varchar</text>
+  <text class="field-muted" x="506" y="452">created_at datetime</text>
+  <text class="field-muted" x="506" y="486">updated_at datetime</text>
+
+  <!-- ENROLLMENTS -->
+  <rect class="box" x="1060" y="130" width="520" height="452"/>
+  <rect class="header" x="1060" y="130" width="520" height="58"/>
+  <text class="header-text" x="1090" y="167">ENROLLMENTS</text>
+  <text class="pk" x="1086" y="228">id bigint PK</text>
+  <text class="field" x="1086" y="260">job_id varchar UK</text>
+  <text class="fk" x="1086" y="292">employee_id bigint FK</text>
+  <text class="field" x="1086" y="324">status varchar</text>
+  <text class="field" x="1086" y="356">uploaded_count int</text>
+  <text class="field" x="1086" y="388">processed_count int</text>
+  <text class="field" x="1086" y="420">failed_count int</text>
+  <text class="field" x="1086" y="452">message text</text>
+  <text class="field-muted" x="1086" y="484">created_at datetime</text>
+  <text class="field-muted" x="1086" y="516">updated_at datetime</text>
+  <text class="field-muted" x="1086" y="548">completed_at datetime</text>
+
+  <!-- LEGEND -->
+  <rect class="box" x="70" y="700" width="300" height="184"/>
+  <rect class="header" x="70" y="700" width="300" height="52"/>
+  <text class="header-text" x="98" y="734">LEGEND</text>
+  <text class="pk" x="94" y="792">PK</text>
+  <text class="legend-label" x="146" y="792">Primary key</text>
+  <text class="fk" x="94" y="828">FK</text>
+  <text class="legend-label" x="146" y="828">Foreign key</text>
+  <text class="field-muted" x="94" y="864">NULL</text>
+  <text class="legend-label" x="146" y="864">Cho phép bỏ trống trong MVP</text>
+
+  <!-- ATTENDANCE_EVENTS -->
+  <rect class="box" x="420" y="650" width="470" height="378"/>
+  <rect class="header" x="420" y="650" width="470" height="58"/>
+  <text class="header-text" x="450" y="687">ATTENDANCE_EVENTS</text>
+  <text class="pk" x="448" y="750">id bigint PK</text>
+  <text class="fk" x="448" y="783">employee_id bigint FK NULL</text>
+  <text class="field" x="448" y="816">action_type varchar</text>
+  <text class="field" x="448" y="849">attendance_status varchar</text>
+  <text class="field" x="448" y="882">score decimal</text>
+  <text class="field" x="448" y="915">camera_id varchar</text>
+  <text class="field" x="448" y="948">snapshot_object_key varchar NULL</text>
+  <text class="field-muted" x="448" y="981">captured_at datetime</text>
+  <text class="field-muted" x="448" y="1014">created_at datetime</text>
+
+  <!-- ENROLLMENT_IMAGES -->
+  <rect class="box" x="1020" y="650" width="560" height="430"/>
+  <rect class="header" x="1020" y="650" width="560" height="58"/>
+  <text class="header-text" x="1050" y="687">ENROLLMENT_IMAGES</text>
+  <text class="pk" x="1048" y="748">id bigint PK</text>
+  <text class="fk" x="1048" y="780">enrollment_id bigint FK</text>
+  <text class="field" x="1048" y="812">object_key varchar</text>
+  <text class="field" x="1048" y="844">original_file_name varchar</text>
+  <text class="field" x="1048" y="876">content_type varchar</text>
+  <text class="field" x="1048" y="908">sort_order int</text>
+  <text class="field" x="1048" y="940">processing_status varchar</text>
+  <text class="field" x="1048" y="972">qdrant_point_id varchar</text>
+  <text class="field" x="1048" y="1004">error_message text</text>
+  <text class="field-muted" x="1048" y="1036">created_at datetime</text>
+  <text class="field-muted" x="1048" y="1068">updated_at datetime</text>
+
+  <!-- Relationships -->
+  <path class="rel" d="M900 334 L1060 334"/>
+  <rect class="rel-chip" x="938" y="296" width="84" height="24"/>
+  <text class="rel-main" x="960" y="313">1 - n</text>
+  <rect class="rel-chip" x="916" y="348" width="128" height="24"/>
+  <text class="rel-sub" x="930" y="365">has enrollments</text>
+
+  <path class="rel" d="M1320 582 L1320 650"/>
+  <rect class="rel-chip" x="1342" y="604" width="84" height="24"/>
+  <text class="rel-main" x="1364" y="621">1 - n</text>
+  <rect class="rel-chip" x="1342" y="636" width="156" height="24"/>
+  <text class="rel-sub" x="1356" y="653">contains images</text>
+
+  <path class="rel" d="M690 502 L690 650"/>
+  <rect class="rel-chip" x="714" y="560" width="100" height="24"/>
+  <text class="rel-main" x="735" y="577">0..1 - n</text>
+  <rect class="rel-chip" x="714" y="592" width="138" height="24"/>
+  <text class="rel-sub" x="728" y="609">matches events</text>
+</svg>

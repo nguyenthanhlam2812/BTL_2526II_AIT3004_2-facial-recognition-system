@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+artifacts/
+*.pyc
+.env
+.env.docker
+data/demo/**/*.jpg
+data/demo/**/*.jpeg
+data/demo/**/*.png
+data/demo/**/*.bmp
+data/demo/**/*.webp
