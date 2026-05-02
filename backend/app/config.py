@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     debug: bool = Field(default=True)
     api_prefix: str = Field(default="/api")
 
+    jwt_secret_key: str = Field(default="change-me")
+    jwt_algorithm: str = Field(default="HS256")
+    jwt_access_token_expire_minutes: int = Field(default=60)
+
+
     mysql_host: str = Field(default="127.0.0.1")
     mysql_port: int = Field(default=3306)
     mysql_database: str = Field(default="face_attendance")
@@ -53,3 +58,4 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
