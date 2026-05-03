@@ -1,12 +1,14 @@
-﻿# Recognition Module
+# Recognition Module
 
-Thư mục này giữ logic AI có thể tái sử dụng khi đưa PoC vào backend và worker.
+Thu muc nay giu phan PoC va logic AI co the tai su dung khi noi vao backend va worker.
 
-## Hiện có
+## Hien co
 
-- `pipelines/face_detect_embed.py`: detect khuôn mặt bằng InsightFace, lấy embedding, xuất JSON và ảnh annotate.
+- `pipelines/face_detect_embed.py`: detect mat, lay embedding, xuat annotate + JSON
+- `pipelines/cosine_similarity_eval.py`: tinh cosine similarity va goi y threshold PoC
+- `models.md`: ghi lai model va huong refactor sau
 
-## Vai trò trong repo
+## Vai tro trong repo
 
-- `recognition/`: logic AI dùng chung
-- `scripts/poc/`: entrypoint để chạy thử nghiệm local trong Phase 2
+- `recognition/`: noi giu logic AI dung chung
+- `scripts/poc/`: entrypoint nhe de chay PoC local
