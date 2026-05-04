@@ -58,3 +58,17 @@ def delete_objects(bucket_name: str, object_keys: list[str]) -> None:
         except MinioException:
             # Cleanup is best-effort only.
             continue
+
+
+def download_object_bytes(bucket_name: str, object_key: str) -> bytes:
+    client = get_minio_client()
+    response = None
+    try:
+        response = client.get_object(bucket_name, object_key)
+        return response.read()
+    except MinioException as exc:
+        raise ObjectStorageError(f"Cannot download object '{object_key}'.") from exc
+    finally:
+        if response is not None:
+            response.close()
+            response.release_conn()
