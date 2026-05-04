@@ -48,8 +48,14 @@ def analyze_image_bytes(image_bytes: bytes) -> dict[str, object]:
             "error_message": "Multiple faces detected.",
         }
 
+    primary_face = faces[0]
+    embedding = np.asarray(primary_face.embedding, dtype=float)
+
     return {
         "status": "success",
         "faces_detected": 1,
         "error_message": None,
+        "embedding": embedding.tolist(),
+        "embedding_dim": int(embedding.shape[0]),
     }
+

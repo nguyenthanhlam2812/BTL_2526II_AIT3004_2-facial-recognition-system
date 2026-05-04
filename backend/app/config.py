@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     qdrant_url: str = Field(default="http://127.0.0.1:6333")
     attendance_threshold: float = Field(default=0.26)
     insightface_model_name: str = Field(default="buffalo_l")
+    qdrant_collection_employee_faces: str = Field(default="employee_faces")
+
 
     model_config = SettingsConfigDict(
         env_file=".env",
