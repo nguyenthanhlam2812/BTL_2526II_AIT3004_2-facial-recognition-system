@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from uuid import uuid4
 
 from qdrant_client import QdrantClient
@@ -11,6 +12,14 @@ from backend.app.config import get_settings
 
 class VectorStoreError(Exception):
     pass
+
+
+@dataclass(slots=True)
+class FaceSearchResult:
+    employee_id: int | None
+    score: float
+    payload: dict[str, object]
+    point_id: str | int | None
 
 
 def get_qdrant_client() -> QdrantClient:
@@ -75,3 +84,38 @@ def upsert_face_embedding(
         raise VectorStoreError("Cannot upsert embedding to Qdrant.") from exc
 
     return point_id
+
+
+def search_face_embedding(
+    *,
+    embedding: list[float],
+    limit: int = 1,
+) -> FaceSearchResult | None:
+    client = get_qdrant_client()
+    collection_name = ensure_collection_exists()
+
+    try:
+        points = client.search(
+            collection_name=collection_name,
+            query_vector=embedding,
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+    except Exception as exc:
+        raise VectorStoreError("Cannot search embedding in Qdrant.") from exc
+
+    if not points:
+        return None
+
+    point = points[0]
+    payload = dict(point.payload or {})
+    employee_id_raw = payload.get("employee_id")
+    employee_id = int(employee_id_raw) if employee_id_raw is not None else None
+
+    return FaceSearchResult(
+        employee_id=employee_id,
+        score=float(point.score),
+        payload=payload,
+        point_id=point.id,
+    )

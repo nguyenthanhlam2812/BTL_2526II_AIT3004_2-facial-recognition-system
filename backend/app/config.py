@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     minio_bucket_snapshots: str = Field(default="snapshots")
 
     qdrant_url: str = Field(default="http://127.0.0.1:6333")
-    attendance_threshold: float = Field(default=0.26)
+    attendance_threshold: float = Field(default=0.4)
     insightface_model_name: str = Field(default="buffalo_l")
     qdrant_collection_employee_faces: str = Field(default="employee_faces")
 

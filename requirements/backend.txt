@@ -1,3 +1,4 @@
+-r poc.txt
 alembic==1.14.1
 fastapi==0.115.0
 minio==7.2.9
