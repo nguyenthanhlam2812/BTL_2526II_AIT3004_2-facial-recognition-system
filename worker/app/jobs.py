@@ -66,26 +66,35 @@ def process_enrollment_job(payload: dict[str, Any]) -> dict[str, Any]:
                     "error_message": f"Unexpected processing error: {exc}",
                 }
 
-            if result["status"] == "success":
-                try:
-                    point_id = upsert_face_embedding(
-                        employee_id=enrollment.employee_id,
-                        enrollment_id=enrollment.id,
-                        enrollment_image_id=image.id,
-                        object_key=image.object_key,
-                        embedding=list(result["embedding"]),
-                    )
-                except VectorStoreError as exc:
-                    image.processing_status = "failed"
-                    image.qdrant_point_id = None
-                    image.error_message = str(exc)
-                    failed_count += 1
-                    continue
+            if result["status"] != "success":
+                image.processing_status = "failed"
+                image.qdrant_point_id = None
+                image.error_message = str(
+                    result.get("error_message")
+                    or "Enrollment image validation failed."
+                )
+                failed_count += 1
+                continue
 
-                image.processing_status = "success"
-                image.qdrant_point_id = point_id
-                image.error_message = None
-                processed_count += 1
+            try:
+                point_id = upsert_face_embedding(
+                    employee_id=enrollment.employee_id,
+                    enrollment_id=enrollment.id,
+                    enrollment_image_id=image.id,
+                    object_key=image.object_key,
+                    embedding=list(result["embedding"]),
+                )
+            except VectorStoreError as exc:
+                image.processing_status = "failed"
+                image.qdrant_point_id = None
+                image.error_message = str(exc)
+                failed_count += 1
+                continue
+
+            image.processing_status = "success"
+            image.qdrant_point_id = point_id
+            image.error_message = None
+            processed_count += 1
 
 
         enrollment.processed_count = processed_count
