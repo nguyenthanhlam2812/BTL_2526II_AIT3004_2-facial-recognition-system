@@ -1,25 +1,18 @@
-﻿# API Contract
+# Hợp đồng API
 
-## Mục đích
+Cập nhật: `2026-05-08`.
 
-Tài liệu này chốt contract API thô để frontend có thể dùng mock và backend có điểm bám khi sang Phase 3.
+Contract này dùng cho frontend admin/kiosk bám theo backend hiện tại.
 
-## Quy ước chung
+## Quy ước
 
-- Prefix API: `/api`
-- Auth: Bearer token cho các route admin
-- Định dạng response lỗi:
+- Prefix: `/api`
+- Auth admin: Bearer token.
+- Swagger: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- Tài khoản seed: `admin` / `admin123`
+- Lỗi FastAPI hiện có thể trả field `detail`.
 
-```json
-{
-  "error": {
-    "code": "string",
-    "message": "string"
-  }
-}
-```
-
-## 1. Auth
+## Auth
 
 ### `POST /api/auth/login`
 
@@ -28,7 +21,7 @@ Request:
 ```json
 {
   "username": "admin",
-  "password": "secret"
+  "password": "admin123"
 }
 ```
 
@@ -46,38 +39,19 @@ Response:
 }
 ```
 
-## 2. Employee
+## Employee
 
-### Metadata employee cho MVP
+Fields chính:
 
-Business fields cần chốt để frontend và backend cùng bám vào:
-
-- `employee_code`: required, unique
-- `full_name`: required
-- `department`: required
-- `position`: required
-- `status`: required, `active` hoặc `inactive`
-
-System fields dự kiến có trong response hoặc DB:
-
-- `id`
-- `created_at`
-- `updated_at`
-
-Ngoài scope hiện tại, chưa thêm:
-
-- `email`
-- `phone`
-- `address`
-- `shift_code`
-- thông tin payroll hoặc HR chi tiết
+- `employee_code`: required, unique.
+- `full_name`: required.
+- `department`: required.
+- `position`: required.
+- `status`: `active` hoặc `inactive`.
 
 ### `GET /api/employees`
 
-Query:
-- `q` optional
-- `page` optional
-- `page_size` optional
+Query: `q`, `page`, `page_size`.
 
 Response:
 
@@ -91,8 +65,8 @@ Response:
       "department": "IT",
       "position": "Engineer",
       "status": "active",
-      "created_at": "2026-04-23T10:00:00Z",
-      "updated_at": "2026-04-23T10:00:00Z"
+      "created_at": "2026-05-08T10:00:00Z",
+      "updated_at": "2026-05-08T10:00:00Z"
     }
   ],
   "total": 1
@@ -100,8 +74,6 @@ Response:
 ```
 
 ### `POST /api/employees`
-
-Request:
 
 ```json
 {
@@ -115,11 +87,9 @@ Request:
 
 ### `PUT /api/employees/{employee_id}`
 
-Request: giống `POST /api/employees`
+Body giống `POST /api/employees`.
 
 ### `DELETE /api/employees/{employee_id}`
-
-Response:
 
 ```json
 {
@@ -127,15 +97,17 @@ Response:
 }
 ```
 
-## 3. Enrollment
+## Enrollment
 
 ### `POST /api/employees/{employee_id}/enrollments`
 
-Content type:
-- `multipart/form-data`
+Cần auth admin.
+
+Content type: `multipart/form-data`
 
 Fields:
-- `files[]`: 1-5 ảnh
+
+- `files`: 1-5 ảnh.
 
 Response:
 
@@ -150,7 +122,7 @@ Response:
 
 ### `GET /api/enrollments/{job_id}`
 
-Response:
+Cần auth admin.
 
 ```json
 {
@@ -163,22 +135,20 @@ Response:
 }
 ```
 
-## 4. Attendance Recognition
+## Attendance
 
 ### `POST /api/attendance/frame`
 
-Ghi chú:
-- Phase 1 chốt HTTP polling là contract chính.
-- WebSocket có thể thêm sau nếu thật sự cần.
+Hiện chưa bắt auth để kiosk gọi trực tiếp trong MVP.
 
-Content type:
-- `multipart/form-data`
+Content type: `multipart/form-data`
 
 Fields:
-- `image`: JPEG frame
-- `action_type`: required, `check_in` hoặc `check_out`
-- `captured_at`: optional ISO datetime
-- `camera_id`: optional
+
+- `image`: required, JPEG/PNG.
+- `action_type`: `check_in` hoặc `check_out`.
+- `captured_at`: optional ISO datetime.
+- `camera_id`: optional string.
 
 Response khi match:
 
@@ -193,34 +163,36 @@ Response khi match:
   "score": 0.86,
   "action_type": "check_in",
   "attendance_status": "recorded",
-  "message": "Check-in recorded",
+  "message": "Check-in recorded.",
   "event_id": 101
 }
 ```
 
-Response khi unknown:
+Response khi unknown/multiple:
 
 ```json
 {
   "matched": false,
   "employee": null,
-  "score": 0.31,
+  "score": null,
   "action_type": "check_in",
   "attendance_status": "unknown_face",
-  "message": "Face not recognized",
+  "message": "Face not recognized.",
   "event_id": 102
 }
 ```
 
-## 5. Attendance History
+`attendance_status` có thể là:
+
+- `recorded`
+- `unknown_face`
+- `multiple_faces`
 
 ### `GET /api/attendance/events`
 
-Query:
-- `employee_id` optional
-- `action_type` optional
-- `from` optional
-- `to` optional
+Cần auth admin.
+
+Query: `employee_id`, `action_type`, `from`, `to`, `page`, `page_size`.
 
 Response:
 
@@ -229,27 +201,27 @@ Response:
   "items": [
     {
       "id": 101,
-      "created_at": "2026-04-19T10:30:00Z",
+      "created_at": "2026-05-08T10:30:00Z",
+      "captured_at": "2026-05-08T10:30:00Z",
       "action_type": "check_in",
       "attendance_status": "recorded",
       "score": 0.86,
+      "camera_id": "cam-01",
+      "snapshot_object_key": null,
       "employee": {
         "id": 1,
         "employee_code": "E001",
         "full_name": "Nguyen Van A"
-      },
-      "snapshot_url": null
+      }
     }
   ],
   "total": 1
 }
 ```
 
-## 6. Healthcheck
+## Healthcheck
 
 ### `GET /healthz`
-
-Response:
 
 ```json
 {

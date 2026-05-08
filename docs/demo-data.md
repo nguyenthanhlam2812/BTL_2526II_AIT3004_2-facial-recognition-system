@@ -1,84 +1,59 @@
-﻿# Demo Data Checklist
+# Dữ liệu demo
 
-## Mục đích
+Cập nhật: `2026-05-08`.
 
-Tài liệu này dùng để chuẩn bị dữ liệu demo và kiểm soát consent trước khi bước sang Phase 2.
+Hiện chưa cần tải dataset lớn để train. Project đang dùng InsightFace pre-trained model, nên MVP chỉ cần bộ ảnh demo nhỏ, rõ mặt và có consent.
 
-## Mục tiêu dữ liệu tối thiểu
+## Nguyên tắc
 
-- 5-10 nhân viên demo.
-- 3-5 ảnh đăng ký cho mỗi nhân viên.
-- 1 bộ ảnh hoặc video của người lạ để test `unknown`.
-- 1 tài khoản admin demo.
+- Không commit dataset lớn vào repo.
+- Không dùng ảnh không rõ nguồn.
+- Không dùng ảnh khi chưa có đồng ý.
+- Dataset lớn chỉ dùng sau này nếu cần evaluate/train riêng.
 
-## Checklist chất lượng ảnh
+## Bộ demo tối thiểu
 
-- Ảnh rõ mặt, không bị blur nặng.
-- Ánh sáng đủ, không quá tối.
+- 3-5 nhân viên demo.
+- 3-5 ảnh enrollment cho mỗi nhân viên.
+- 1-3 ảnh/frame người lạ để test `unknown_face`.
+- 1 ảnh nhiều khuôn mặt để test `multiple_faces` nếu có.
+- Tài khoản admin: `admin` / `admin123`.
+
+## Chất lượng ảnh
+
+- Rõ mặt, không blur nặng.
+- Đủ sáng.
 - Ưu tiên góc chính diện.
-- Không đeo khẩu trang trong ảnh đăng ký.
-- Khuôn mặt chiếm phần đủ lớn trong ảnh.
+- Mỗi ảnh enrollment chỉ có 1 khuôn mặt.
+- Không đeo khẩu trang trong ảnh enrollment.
 
-## Checklist consent
+## Consent
 
-- Người trong ảnh đồng ý cho dùng vào mục đích demo học phần.
-- Ảnh không lấy từ nguồn không rõ ràng.
-- Không dùng dữ liệu nhạy cảm ngoài phạm vi đồ án.
-- Có thể xóa dữ liệu demo sau khi kết thúc học phần nếu cần.
+- Người trong ảnh đồng ý dùng cho demo học phần.
+- Ảnh không chứa dữ liệu nhạy cảm ngoài phạm vi đồ án.
+- Có thể xóa dữ liệu demo sau khi kết thúc học phần.
 
-## Quy ước tổ chức dữ liệu
-
-- Mỗi nhân viên có 1 thư mục riêng.
-- Tên file nên theo mẫu: `employee_code_full_name_01.jpg`
-- Tách riêng thư mục `unknown/` cho dữ liệu người lạ.
-
-Ví dụ:
+## Tổ chức thư mục
 
 ```text
 data/demo/
   enrolled/
-    employee_001/
-      employee_001_01.jpg
-      employee_001_02.jpg
-      employee_001_03.jpg
+    E001_nguyen_van_a/
+      E001_nguyen_van_a_01.jpg
+      E001_nguyen_van_a_02.jpg
+      E001_nguyen_van_a_03.jpg
   unknown/
     visitor_01.jpg
+  multiple_faces/
+    group_01.jpg
 ```
 
-## Snapshot Phase 2 hiện tại
+## Threshold
 
-Cập nhật lần cuối: `2026-04-23`
+Backend hiện dùng:
 
-- Tổng ảnh đang dùng cho PoC: `13`
-- Enrolled identities: `2`
-- Ảnh enrolled:
-  - `lam`: `5` ảnh
-  - `nu`: `3` ảnh
-- Ảnh unknown: `5`
-- Kết quả detect:
-  - `13` ảnh `ok`
-  - `0` ảnh `multiple_faces_detected`
+```env
+ATTENDANCE_THRESHOLD=0.4
+```
 
-## Kết quả threshold sơ bộ
-
-Nguồn kết quả: `artifacts/poc/cosine_similarity.json`
-
-- `positive_pairs`: `13`
-- `negative_pairs`: `55`
-- `positive min`: `0.362113`
-- `negative max`: `0.150669`
-- `recommended_threshold`: `0.256391`
-- `separation_gap`: `0.211444`
-
-## Quyết định tạm thời cho Phase 3
-
-- Dùng `0.26` làm threshold cấu hình ban đầu cho luồng attendance.
-- Threshold này chỉ là giá trị PoC, vẫn phải rerun khi bộ ảnh consent lớn hơn.
-- Bộ dữ liệu PoC hiện tại đã clean, tất cả ảnh đang dùng đều detect `1` khuôn mặt.
-
-## Trạng thái cần chốt trước Phase 2
-
-- Danh sách nhân viên demo đã đủ.
-- Ảnh đăng ký đạt chất lượng tối thiểu.
-- Consent đã được xác nhận.
-- Có ít nhất 1 case người lạ để test deny.
+PoC cũ gợi ý threshold khoảng `0.26`, nhưng giá trị vận hành hiện tại là `0.4`. Khi có bộ demo thật lớn hơn, nên rerun evaluation để chốt threshold tốt hơn.

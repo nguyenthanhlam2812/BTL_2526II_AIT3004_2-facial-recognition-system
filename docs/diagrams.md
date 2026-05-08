@@ -1,15 +1,17 @@
-﻿# Diagrams
+# Sơ đồ hệ thống
 
-## 1. System Architecture
+Cập nhật: `2026-05-08`.
+
+## 1. Kiến trúc cuối cùng
 
 ```mermaid
 flowchart LR
-    Admin["Admin UI (/admin)"]
-    Kiosk["Kiosk UI (/kiosk)"]
+    Admin["Admin UI"]
+    Kiosk["Kiosk UI"]
     Nginx["nginx"]
     Backend["FastAPI backend"]
     Worker["RQ worker"]
-    Redis["Redis / RQ queue"]
+    Redis["Redis / RQ"]
     MySQL["MySQL"]
     MinIO["MinIO"]
     Qdrant["Qdrant"]
@@ -29,11 +31,11 @@ flowchart LR
     Worker --> MySQL
 ```
 
-## 2. Enrollment Flow
+## 2. Enrollment
 
 ```mermaid
 sequenceDiagram
-    participant Admin as Admin UI
+    participant Admin as Admin UI / Swagger
     participant Backend as FastAPI backend
     participant MinIO as MinIO
     participant MySQL as MySQL
@@ -41,50 +43,66 @@ sequenceDiagram
     participant Worker as Worker
     participant Qdrant as Qdrant
 
-    Admin->>Backend: Create employee
-    Backend->>MySQL: Insert employee
-    Admin->>Backend: Upload 3-5 face images
-    Backend->>MinIO: Store enrollment images
-    Backend->>MySQL: Create enrollment record
-    Backend->>Redis: Enqueue embedding job
+    Admin->>Backend: Upload enrollment images
+    Backend->>MinIO: Store images
+    Backend->>MySQL: Create enrollment records
+    Backend->>Redis: Enqueue job
     Redis->>Worker: Deliver job
-    Worker->>MinIO: Read enrollment images
+    Worker->>MinIO: Read images
     Worker->>Worker: Detect face + extract embedding
-    Worker->>Qdrant: Upsert embedding vectors
-    Worker->>MySQL: Update enrollment status
-    Backend-->>Admin: Return job status
+    Worker->>Qdrant: Upsert vectors
+    Worker->>MySQL: Update status
+    Admin->>Backend: Poll job status
 ```
 
-## 3. Attendance Recognition Flow
+## 3. Attendance
 
 ```mermaid
 sequenceDiagram
-    participant Kiosk as Kiosk UI
+    participant Kiosk as Kiosk UI / Swagger
     participant Backend as FastAPI backend
     participant Qdrant as Qdrant
     participant MySQL as MySQL
-    participant MinIO as MinIO
 
-    Kiosk->>Backend: POST /api/attendance/frame (image, action_type)
+    Kiosk->>Backend: POST /api/attendance/frame
     Backend->>Backend: Detect face + extract embedding
-    Backend->>Qdrant: Search nearest embedding
-    Backend->>Backend: Apply cosine threshold
+    Backend->>Qdrant: Search nearest vector
+    Backend->>Backend: Apply threshold
 
-    alt Face matched
+    alt Recorded
         Backend->>MySQL: Insert attendance event
-        Backend-->>Kiosk: matched=true, attendance_status=recorded
-    else Unknown face
-        Backend->>MinIO: Optionally store snapshot
+        Backend-->>Kiosk: recorded
+    else Unknown
         Backend->>MySQL: Insert unknown event
-        Backend-->>Kiosk: matched=false, attendance_status=unknown_face
-    else Multiple faces / invalid frame
-        Backend->>MinIO: Optionally store snapshot
-        Backend->>MySQL: Insert error event
-        Backend-->>Kiosk: matched=false, attendance_status=multiple_faces
+        Backend-->>Kiosk: unknown_face
+    else Multiple faces
+        Backend->>MySQL: Insert multiple_faces event
+        Backend-->>Kiosk: multiple_faces
     end
 ```
 
-## 4. ERD Draft Cho MySQL
+## 4. Docker startup
+
+```mermaid
+sequenceDiagram
+    participant Compose as docker compose
+    participant MySQL as mysql
+    participant Backend as backend
+    participant Worker as worker
+    participant Redis as redis
+
+    Compose->>MySQL: Start database
+    Compose->>Redis: Start queue
+    Compose->>Backend: Start backend
+    Backend->>MySQL: Wait database
+    Backend->>Backend: Run migration
+    Backend->>Backend: Seed admin
+    Backend->>Backend: Start Uvicorn
+    Compose->>Worker: Start worker
+    Worker->>Redis: Listen enrollment queue
+```
+
+## 5. ERD
 
 ![ERD MySQL](assets/erd-mysql.svg)
 
@@ -155,21 +173,3 @@ erDiagram
     ENROLLMENTS ||--|{ ENROLLMENT_IMAGES : contains
     EMPLOYEES o|--o{ ATTENDANCE_EVENTS : matches
 ```
-
-### Ghi chú chốt để bám vào schema
-
-- `users` chỉ phục vụ đăng nhập admin trong MVP. Chưa thêm audit trail như `created_by`, `updated_by`.
-- `employees` là thực thể nghiệp vụ chính cho CRUD admin và attendance history.
-- `enrollments` đại diện cho 1 lần upload ảnh đăng ký của 1 nhân viên, bám theo `job_id`, `status`, `uploaded_count`, `processed_count`, `failed_count`.
-- `enrollment_images` là bảng phụ cần có để lưu metadata của từng ảnh upload vào MinIO. Mỗi record tương ứng 1 file ảnh trong một enrollment.
-- Giả định MVP: mỗi `enrollment_image` sau khi xử lý thành công sẽ map tới đúng 1 vector trong Qdrant qua `qdrant_point_id`.
-- `attendance_events.employee_id` cho phép `NULL` để lưu các case `unknown_face` hoặc `multiple_faces`.
-- `attendance_events.snapshot_object_key` cho phép `NULL`; chỉ dùng khi cần lưu snapshot debug trong MinIO.
-
-### Giá trị enum dự kiến cho MVP
-
-- `employees.status`: `active`, `inactive`
-- `enrollments.status`: `pending`, `success`, `failed`
-- `enrollment_images.processing_status`: `pending`, `success`, `failed`
-- `attendance_events.action_type`: `check_in`, `check_out`
-- `attendance_events.attendance_status`: `recorded`, `unknown_face`, `multiple_faces`

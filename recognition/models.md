@@ -1,32 +1,22 @@
-# Recognition Models
+# Mô hình nhận diện
 
-Tai lieu nay ghi lai lua chon model hien tai cho recognition trong MVP.
+## Lựa chọn hiện tại
 
-## Lua chon hien tai
+- Library: `InsightFace`.
+- Model pack: `buffalo_l`.
+- Môi trường ưu tiên: CPU-first.
 
-- Detection va embedding dang dung `InsightFace`
-- Model pack hien tai: `buffalo_l`
-- Moi truong uu tien: CPU-first de demo on dinh
+## Lý do chọn
 
-## Ly do chon
+- Đủ tốt cho demo MVP.
+- Dễ dùng trong PoC, backend và worker.
+- Không cần train model riêng ở giai đoạn hiện tại.
 
-- De dung trong PoC va backend integration
-- Du tot cho bo du lieu demo hien tai
-- Giu MVP gon, khong om them nhieu lop abstraction som
+## File liên quan
 
-## Trang thai trong repo
+- `recognition/pipelines/face_detect_embed.py`
+- `recognition/pipelines/cosine_similarity_eval.py`
 
-- PoC detect + embedding: `recognition/pipelines/face_detect_embed.py`
-- Threshold eval: `recognition/pipelines/cosine_similarity_eval.py`
+## Hướng sau này
 
-## Huong refactor sau
-
-Khi bat dau noi flow attendance that, co the tach nho thanh:
-
-- `detect.py`
-- `align.py`
-- `embed.py`
-- `similarity.py`
-- `threshold.py`
-
-Hien tai chua uu tien tach nho vi backend core va attendance flow con quan trong hon.
+Nếu cần mở rộng, có thể tách logic thành `detect.py`, `embed.py`, `similarity.py`, `threshold.py`. Hiện tại chưa ưu tiên vì MVP cần hoàn thiện frontend và Docker trước.

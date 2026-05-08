@@ -1,42 +1,75 @@
-﻿# Phạm vi Dự án
+# Phạm vi dự án
 
-## Tóm tắt scope
+Cập nhật: `2026-05-08`.
 
-- Use case duy nhất: check-in/check-out nhân viên bằng nhận diện khuôn mặt.
-- Phạm vi MVP: 1 camera, 1 điểm chấm công, 1 nhóm đối tượng là nhân viên nội bộ.
-- Hệ thống gồm `/admin`, `/kiosk`, backend FastAPI, MySQL, MinIO, Qdrant, Redis + RQ, nginx và Docker Compose.
+## Use case
+
+Check-in/check-out nhân viên bằng nhận diện khuôn mặt.
+
+Phạm vi MVP:
+
+- 1 điểm chấm công.
+- 1 luồng admin.
+- 1 luồng kiosk.
+- Nhân viên nội bộ.
+- Docker Compose single-node.
 
 ## In scope
 
-- Admin CRUD nhân viên.
-- Admin upload ảnh đăng ký khuôn mặt.
-- Worker tạo embedding nền.
-- Kiosk nhận frame và trả kết quả check-in/check-out.
+- Admin login.
+- Employee CRUD.
+- Upload ảnh enrollment.
+- Worker tạo embedding.
+- Qdrant search embedding.
+- Kiosk gửi frame check-in/check-out.
 - Lưu attendance history.
-- Đóng gói toàn hệ thống bằng Docker Compose.
+- Đóng gói bằng Docker Compose.
 
-## Out of scope for MVP
+## Out of scope
 
 - Multi-camera.
 - Mobile app.
-- Tính công, bảng lương, ca kíp và báo cáo HR phức tạp.
-- Anti-spoofing hoặc liveness.
+- Tính công, bảng lương, ca kíp.
+- Anti-spoofing/liveness.
 - Role matrix phức tạp.
 - Dashboard analytics nặng.
-- Kubernetes hoặc monitoring stack phức tạp.
+- Kubernetes.
+- Train model riêng bằng dataset lớn.
 
-## Tiêu chí thành công
+## Trạng thái hiện tại
 
-- Demo nhận diện được ít nhất 1 nhân viên đã enroll và ghi được check-in/check-out.
-- Từ chối được ít nhất 1 người lạ.
-- History lưu được attendance event mới sau khi nhận diện.
-- Admin tạo được nhân viên và upload được ảnh đăng ký.
-- Worker tạo được embedding và Qdrant có dữ liệu.
-- `docker compose up -d` chạy được full stack.
-- README đủ để chạy lại hệ thống trên máy khác.
+Đã xong:
 
-## Điều kiện chấp nhận MVP
+- Backend core.
+- Enrollment pipeline.
+- Worker pipeline.
+- Attendance API.
+- Attendance history.
+- Backend tests.
+- Backend Docker stack.
 
-- Luồng enroll -> embedding -> recognize -> attendance log chạy được end-to-end.
-- Không phát sinh tính năng ngoài scope làm chậm tiến độ.
-- Hệ thống bám đúng thành phần bắt buộc trong brief môn học.
+Chưa xong:
+
+- Frontend admin.
+- Frontend kiosk.
+- Nginx.
+- Full-stack Compose.
+
+## Tiêu chí MVP cuối
+
+- Admin login được.
+- Tạo/sửa/xóa nhân viên được.
+- Upload enrollment được.
+- Worker ghi embedding vào Qdrant được.
+- Kiosk nhận diện được nhân viên đã enroll.
+- Kiosk từ chối được người lạ.
+- History có event mới.
+- `docker compose up -d --build` chạy được full stack.
+
+## Thứ tự làm tiếp
+
+1. Frontend admin.
+2. Frontend kiosk.
+3. Nginx.
+4. Full-stack Docker test.
+5. Demo guide cuối.

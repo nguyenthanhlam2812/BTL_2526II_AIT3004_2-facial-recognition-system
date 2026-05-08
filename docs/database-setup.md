@@ -1,29 +1,30 @@
-# Thiet lap Database Local
+# Thiết lập database và dependency
 
-Tai lieu nay chot cach lam hien tai: phat trien voi **MySQL local** truoc, sau do moi doi sang Docker khi can dong goi full stack.
+Cập nhật: `2026-05-08`.
 
-## Tool dang dung
+Project có 2 chế độ:
 
-- MySQL Workbench: tao database, user, kiem tra bang
-- PowerShell: chay lenh trong project
-- SQLAlchemy: dinh nghia schema bang model Python
-- Alembic: sinh va chay migration
+- Local dev: backend/worker chạy bằng `.venv`, dùng `.env`.
+- Docker: backend/worker/dependencies chạy bằng Compose, dùng `.env.docker.example` và có thể override bằng `.env.docker`.
 
-## File env lien quan
+## Env files
 
-- `.env`: cau hinh local hien tai
-- `.env.example`: mau local cho may khac
-- `.env.docker`: cau hinh khi chay trong Docker
-- `.env.docker.example`: mau Docker
+| File | Mục đích |
+| --- | --- |
+| `.env` | Local dev |
+| `.env.example` | Mẫu local dev |
+| `.env.docker` | Override Docker, không bắt buộc |
+| `.env.docker.example` | Mặc định cho Docker Compose |
 
-Quy uoc:
+Port cần nhớ:
 
-- chay local: dung `.env`
-- chay Docker: dung `.env.docker`
+- MySQL local của bạn có thể dùng `3307`.
+- MySQL Docker đang map host port `3306`.
+- Không cần đổi MySQL local về `3306` vì `.env` và `.env.docker.example` tách nhau.
 
-## 1. Tao database
+## Local MySQL
 
-Trong MySQL Workbench, chay:
+Tạo database:
 
 ```sql
 CREATE DATABASE IF NOT EXISTS face_attendance
@@ -31,7 +32,7 @@ CHARACTER SET utf8mb4
 COLLATE utf8mb4_unicode_ci;
 ```
 
-## 2. Tao user ung dung
+Tạo user:
 
 ```sql
 CREATE USER IF NOT EXISTS 'app'@'localhost' IDENTIFIED BY 'app_password';
@@ -43,43 +44,56 @@ GRANT ALL PRIVILEGES ON face_attendance.* TO 'app'@'127.0.0.1';
 FLUSH PRIVILEGES;
 ```
 
-## 3. Kiem tra `.env`
-
-Toi thieu can dung cac bien sau:
+Nếu MySQL local chạy port `3307`, `.env` nên có:
 
 ```env
 MYSQL_HOST=127.0.0.1
-MYSQL_PORT=3306
+MYSQL_PORT=3307
 MYSQL_DATABASE=face_attendance
 MYSQL_USER=app
 MYSQL_PASSWORD=app_password
 ```
 
-Neu MySQL local cua ban dang chay port khac, sua `MYSQL_PORT` cho dung voi may.
-
-## 4. Cai dependency backend
+Chạy migration và seed:
 
 ```powershell
-.venv\Scripts\pip install -r requirements\backend.txt
+.\.venv\Scripts\alembic upgrade head
+.\.venv\Scripts\python scripts\seed\seed_admin.py
 ```
 
-## 5. Chay migration
+Kiểm tra kết nối:
 
 ```powershell
-.venv\Scripts\alembic upgrade head
+.\.venv\Scripts\python -c "from sqlalchemy import text; from backend.app.db.session import engine; conn = engine.connect(); print(conn.execute(text('SELECT 1')).scalar()); conn.close()"
 ```
 
-## 6. Kiem tra ket noi nhanh
+In ra `1` là ổn.
+
+## Docker backend stack
 
 ```powershell
-.venv\Scripts\python -c "from sqlalchemy import text; from backend.app.db.session import engine; conn = engine.connect(); print(conn.execute(text('SELECT 1')).scalar()); conn.close()"
+docker compose build backend worker
+docker compose up -d mysql redis minio qdrant backend worker
+docker compose ps
 ```
 
-Neu in ra `1` la ket noi DB on.
+Backend container tự:
 
-## Ghi chu
+1. Wait MySQL.
+2. Chạy `alembic upgrade head` nếu `RUN_MIGRATIONS=true`.
+3. Chạy `scripts/seed/seed_admin.py` nếu `SEED_ADMIN=true`.
+4. Start Uvicorn.
 
-- Khong tao bang bang tay roi bo qua migration
-- Khong hard-code host/port DB trong code
-- Khong dung root cho app logic
-- Chot schema qua model + Alembic de sau nay doi sang Docker khong bi roi
+Kiểm tra logs:
+
+```powershell
+docker compose logs backend --tail=150
+docker compose logs worker --tail=120
+```
+
+## Nguyên tắc
+
+- Không tạo bảng tay rồi bỏ qua migration.
+- Không hard-code host/port DB trong code.
+- Không dùng root cho app logic.
+- Khi thêm env key mới, cập nhật cả `.env.example` và `.env.docker.example`.
