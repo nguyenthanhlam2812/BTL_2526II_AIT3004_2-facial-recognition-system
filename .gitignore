@@ -9,3 +9,9 @@ data/demo/**/*.jpeg
 data/demo/**/*.png
 data/demo/**/*.bmp
 data/demo/**/*.webp
+
+.claude/
+CLAUDE.md
+docs/frontend-design.md
+docs/learning-notes.md
+docs/plan-week1-login.md
