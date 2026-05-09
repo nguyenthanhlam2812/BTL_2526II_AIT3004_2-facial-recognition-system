@@ -104,4 +104,5 @@ npm run build
 - `docs/api-contract.md`: contract API.
 - `docs/database-setup.md`: cấu hình database local và Docker.
 - `docs/demo-data.md`: dữ liệu demo và lưu ý consent.
+- `docs/demo-guide.md`: hướng dẫn demo và xử lý lỗi thường gặp.
 - `docs/diagrams.md`: sơ đồ hệ thống.
