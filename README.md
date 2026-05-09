@@ -25,7 +25,7 @@ Chưa xong:
 
 - Frontend admin.
 - Frontend kiosk.
-- Nginx cho full stack.
+- Frontend image (Vite build + Nginx serve + proxy `/api`).
 - Demo guide cuối cho giảng viên.
 
 ## Cấu trúc chính
@@ -146,6 +146,8 @@ Tài khoản admin mặc định:
 - `docs/project-scope.md`: phạm vi và tiêu chí MVP.
 - `docs/architecture.md`: kiến trúc hệ thống.
 - `docs/api-contract.md`: contract API cho frontend.
+- `docs/frontend-design.md`: thiết kế frontend (stack, cấu trúc, lộ trình).
+- `docs/learning-notes.md`: ghi chú học tập và cách dùng AI hỗ trợ.
 - `docs/database-setup.md`: local DB và Docker DB.
 - `docs/demo-data.md`: dữ liệu demo và consent.
 - `docs/diagrams.md`: sơ đồ Mermaid và ERD.
@@ -155,5 +157,5 @@ Tài khoản admin mặc định:
 1. Commit mốc docs/backend compose-ready.
 2. Làm frontend admin.
 3. Làm frontend kiosk.
-4. Thêm nginx và frontend vào Compose.
+4. Đóng gói frontend (Vite build + Nginx serve + proxy `/api`) và thêm vào Compose.
 5. Chạy mục tiêu cuối: `docker compose up -d --build`.

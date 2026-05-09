@@ -52,7 +52,7 @@ Chưa xong:
 
 - Frontend admin.
 - Frontend kiosk.
-- Nginx.
+- Frontend image (Nginx serve + proxy `/api`).
 - Full-stack Compose.
 
 ## Tiêu chí MVP cuối
@@ -70,6 +70,6 @@ Chưa xong:
 
 1. Frontend admin.
 2. Frontend kiosk.
-3. Nginx.
+3. Frontend image (Vite build + Nginx serve + proxy `/api`).
 4. Full-stack Docker test.
 5. Demo guide cuối.

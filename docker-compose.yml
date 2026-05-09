@@ -78,6 +78,16 @@ services:
     volumes:
       - insightface_models:/root/.insightface
 
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
 volumes:
   mysql_data:
   minio_data:

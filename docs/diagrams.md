@@ -8,7 +8,7 @@ Cập nhật: `2026-05-08`.
 flowchart LR
     Admin["Admin UI"]
     Kiosk["Kiosk UI"]
-    Nginx["nginx"]
+    Frontend["Frontend container / Nginx"]
     Backend["FastAPI backend"]
     Worker["RQ worker"]
     Redis["Redis / RQ"]
@@ -17,10 +17,10 @@ flowchart LR
     Qdrant["Qdrant"]
     Camera["Webcam"]
 
-    Admin --> Nginx
-    Kiosk --> Nginx
+    Admin --> Frontend
+    Kiosk --> Frontend
     Camera --> Kiosk
-    Nginx --> Backend
+    Frontend --> Backend
     Backend --> MySQL
     Backend --> MinIO
     Backend --> Qdrant

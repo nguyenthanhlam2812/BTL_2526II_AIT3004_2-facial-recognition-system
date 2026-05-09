@@ -20,8 +20,7 @@ Stack cuối cần có:
 - `qdrant`
 - `backend`
 - `worker`
-- `frontend`
-- `nginx`
+- `frontend` (image bao gồm Nginx phục vụ SPA tĩnh + reverse proxy `/api` tới `backend`)
 
 Hiện tại đã chạy được bằng Docker:
 
@@ -35,7 +34,6 @@ Hiện tại đã chạy được bằng Docker:
 Chưa xong:
 
 - `frontend`
-- `nginx`
 
 ## Thành phần
 
@@ -47,8 +45,7 @@ Chưa xong:
 | `redis` | Queue cho RQ |
 | `minio` | Lưu ảnh enrollment và snapshot nếu cần |
 | `qdrant` | Lưu/search face embedding |
-| `frontend` | UI admin và kiosk, sẽ làm ở mốc tiếp theo |
-| `nginx` | Reverse proxy cho full stack, sẽ thêm sau frontend |
+| `frontend` | Image multi-stage: build SPA bằng Vite, runtime dùng Nginx phục vụ static + reverse proxy `/api` → `backend` |
 
 ## Cấu trúc repo
 
@@ -173,15 +170,17 @@ Chưa hoàn thành:
 
 - Frontend admin.
 - Frontend kiosk.
-- Nginx.
+- Frontend image (Vite build + Nginx serve + proxy `/api`).
 - Full-stack Compose.
 
 ## Mốc tiếp theo
 
 1. Làm frontend admin: login, employee CRUD, upload enrollment, xem job status.
 2. Làm frontend kiosk: camera/frame upload, check-in/check-out, hiển thị kết quả.
-3. Thêm nginx và frontend service vào `docker-compose.yml`.
+3. Đóng gói frontend bằng image multi-stage (Vite build → Nginx serve + reverse proxy `/api`) và thêm service `frontend` vào `docker-compose.yml`.
 4. Chạy full stack bằng `docker compose up -d --build`.
+
+Thiết kế chi tiết frontend: xem `docs/frontend-design.md`.
 
 ## Definition of Done cho MVP
 
