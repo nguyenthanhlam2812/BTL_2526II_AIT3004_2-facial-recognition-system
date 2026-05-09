@@ -47,6 +47,13 @@ export default function AdminLayout() {
           onClick={() => navigate("/admin/attendance")}
           style={{ borderRadius: 6 }}
         />
+        <Divider my={4} />
+        <NavLink
+          label="Kiosk ↗"
+          onClick={() => window.open("/kiosk", "_blank")}
+          style={{ borderRadius: 6 }}
+          c="dimmed"
+        />
       </AppShell.Navbar>
 
       <AppShell.Main>

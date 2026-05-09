@@ -18,11 +18,14 @@ from backend.app.schemas.attendance import (
     AttendanceStatus,
 )
 from backend.app.services.face_analyzer import analyze_image_bytes
-from backend.app.services.qdrant_service import VectorStoreError, search_face_embedding
+from backend.app.services.qdrant_service import VectorStoreError, search_face_embeddings
 
 
 class AttendanceInfrastructureError(Exception):
     pass
+
+
+FACE_SEARCH_LIMIT = 5
 
 
 def recognize_attendance_frame(
@@ -63,16 +66,16 @@ def recognize_attendance_frame(
         )
 
     try:
-        search_result = search_face_embedding(
+        search_results = search_face_embeddings(
             embedding=list(analysis["embedding"]),
-            limit=1,
+            limit=FACE_SEARCH_LIMIT,
         )
     except VectorStoreError as exc:
         raise AttendanceInfrastructureError(
             "Attendance vector search is unavailable."
         ) from exc
 
-    if search_result is None:
+    if not search_results:
         return _save_unmatched_event(
             db,
             action_type=action_type,
@@ -84,25 +87,31 @@ def recognize_attendance_frame(
         )
 
     threshold = get_settings().attendance_threshold
-    if search_result.employee_id is None or search_result.score < threshold:
+    for search_result in search_results:
+        if search_result.employee_id is None:
+            continue
+
+        if search_result.score < threshold:
+            return _save_unmatched_event(
+                db,
+                action_type=action_type,
+                attendance_status="unknown_face",
+                message="Face not recognized.",
+                score=search_result.score,
+                captured_at=captured_at,
+                camera_id=camera_id,
+            )
+
+        employee = db.get(Employee, search_result.employee_id)
+        if employee is not None:
+            break
+    else:
         return _save_unmatched_event(
             db,
             action_type=action_type,
             attendance_status="unknown_face",
             message="Face not recognized.",
-            score=search_result.score,
-            captured_at=captured_at,
-            camera_id=camera_id,
-        )
-
-    employee = db.get(Employee, search_result.employee_id)
-    if employee is None:
-        return _save_unmatched_event(
-            db,
-            action_type=action_type,
-            attendance_status="unknown_face",
-            message="Matched embedding points to a missing employee.",
-            score=search_result.score,
+            score=search_results[0].score,
             captured_at=captured_at,
             camera_id=camera_id,
         )

@@ -78,7 +78,7 @@ def test_recognize_attendance_frame_returns_unknown_face_when_qdrant_has_no_matc
             "embedding": [0.1] * 512,
         },
     )
-    monkeypatch.setattr(attendance_service, "search_face_embedding", lambda **_: None)
+    monkeypatch.setattr(attendance_service, "search_face_embeddings", lambda **_: [])
 
     response = attendance_service.recognize_attendance_frame(
         db_session,
@@ -110,13 +110,15 @@ def test_recognize_attendance_frame_returns_unknown_face_when_score_below_thresh
     )
     monkeypatch.setattr(
         attendance_service,
-        "search_face_embedding",
-        lambda **_: FaceSearchResult(
-            employee_id=123,
-            score=0.1,
-            payload={},
-            point_id="point-1",
-        ),
+        "search_face_embeddings",
+        lambda **_: [
+            FaceSearchResult(
+                employee_id=123,
+                score=0.1,
+                payload={},
+                point_id="point-1",
+            )
+        ],
     )
 
     response = attendance_service.recognize_attendance_frame(
@@ -160,13 +162,15 @@ def test_recognize_attendance_frame_returns_recorded_when_match_succeeds(
     )
     monkeypatch.setattr(
         attendance_service,
-        "search_face_embedding",
-        lambda **_: FaceSearchResult(
-            employee_id=employee.id,
-            score=0.95,
-            payload={},
-            point_id="point-1",
-        ),
+        "search_face_embeddings",
+        lambda **_: [
+            FaceSearchResult(
+                employee_id=employee.id,
+                score=0.95,
+                payload={},
+                point_id="point-1",
+            )
+        ],
     )
 
     response = attendance_service.recognize_attendance_frame(
@@ -183,3 +187,62 @@ def test_recognize_attendance_frame_returns_recorded_when_match_succeeds(
     assert response.employee.id == employee.id
     assert response.message == "Check-in recorded."
     assert db_session.scalar(select(func.count()).select_from(AttendanceEvent)) == 1
+
+
+def test_recognize_attendance_frame_skips_missing_employee_match(
+    db_session,
+    monkeypatch,
+):
+    employee = Employee(
+        employee_code="E002",
+        full_name="Tran Thi B",
+        department="HR",
+        position="Manager",
+        status="active",
+    )
+    db_session.add(employee)
+    db_session.commit()
+    db_session.refresh(employee)
+
+    monkeypatch.setattr(
+        attendance_service,
+        "analyze_image_bytes",
+        lambda _: {
+            "status": "success",
+            "faces_detected": 1,
+            "error_message": None,
+            "embedding": [0.2] * 512,
+        },
+    )
+    monkeypatch.setattr(
+        attendance_service,
+        "search_face_embeddings",
+        lambda **_: [
+            FaceSearchResult(
+                employee_id=999,
+                score=0.99,
+                payload={},
+                point_id="orphan-point",
+            ),
+            FaceSearchResult(
+                employee_id=employee.id,
+                score=0.92,
+                payload={},
+                point_id="valid-point",
+            ),
+        ],
+    )
+
+    response = attendance_service.recognize_attendance_frame(
+        db_session,
+        image_bytes=b"fake-image-bytes",
+        action_type="check_out",
+        captured_at=None,
+        camera_id="cam-01",
+    )
+
+    assert response.matched is True
+    assert response.attendance_status == "recorded"
+    assert response.employee is not None
+    assert response.employee.id == employee.id
+    assert response.score == 0.92

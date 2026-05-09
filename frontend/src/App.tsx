@@ -5,8 +5,7 @@ import EmployeesPage from "@/routes/admin/EmployeesPage";
 import EmployeeFormPage from "@/routes/admin/EmployeeFormPage";
 import EnrollPage from "@/routes/admin/EnrollPage";
 import AttendancePage from "@/routes/admin/AttendancePage";
-
-// Route /kiosk sẽ thêm ở tuần 5
+import KioskPage from "@/routes/kiosk/KioskPage";
 
 export default function App() {
   return (
@@ -25,6 +24,9 @@ export default function App() {
         {/* Attendance */}
         <Route path="attendance" element={<AttendancePage />} />
       </Route>
+
+      {/* Kiosk — standalone, không cần auth */}
+      <Route path="/kiosk" element={<KioskPage />} />
 
       <Route path="/" element={<Navigate to="/admin/employees" replace />} />
       <Route path="*" element={<Navigate to="/login" replace />} />

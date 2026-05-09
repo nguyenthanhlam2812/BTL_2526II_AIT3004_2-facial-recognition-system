@@ -91,6 +91,15 @@ def search_face_embedding(
     embedding: list[float],
     limit: int = 1,
 ) -> FaceSearchResult | None:
+    results = search_face_embeddings(embedding=embedding, limit=limit)
+    return results[0] if results else None
+
+
+def search_face_embeddings(
+    *,
+    embedding: list[float],
+    limit: int = 5,
+) -> list[FaceSearchResult]:
     client = get_qdrant_client()
     collection_name = ensure_collection_exists()
 
@@ -105,10 +114,10 @@ def search_face_embedding(
     except Exception as exc:
         raise VectorStoreError("Cannot search embedding in Qdrant.") from exc
 
-    if not points:
-        return None
+    return [_build_face_search_result(point) for point in points]
 
-    point = points[0]
+
+def _build_face_search_result(point) -> FaceSearchResult:
     payload = dict(point.payload or {})
     employee_id_raw = payload.get("employee_id")
     employee_id = int(employee_id_raw) if employee_id_raw is not None else None
