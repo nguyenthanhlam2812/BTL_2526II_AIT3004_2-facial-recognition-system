@@ -1,6 +1,6 @@
 # Phạm vi dự án
 
-Cập nhật: `2026-05-08`.
+Cập nhật: `2026-05-09`.
 
 ## Use case
 
@@ -47,13 +47,18 @@ Phạm vi MVP:
 - Attendance history.
 - Backend tests.
 - Backend Docker stack.
-
-Chưa xong:
-
 - Frontend admin.
 - Frontend kiosk.
 - Frontend image (Nginx serve + proxy `/api`).
 - Full-stack Compose.
+- Demo guide.
+- AI tuning cơ bản cho demo: threshold, lọc false-positive nhỏ, warm-up model.
+
+Cần kiểm tra cuối:
+
+- Dry-run demo đầy đủ qua `http://localhost:8080`.
+- Chuẩn bị bộ ảnh enrollment đủ rõ và đa góc cho người demo chính.
+- Chỉnh `ATTENDANCE_THRESHOLD` trong `.env.docker` nếu dữ liệu demo thực tế cần.
 
 ## Tiêu chí MVP cuối
 
@@ -68,8 +73,8 @@ Chưa xong:
 
 ## Thứ tự làm tiếp
 
-1. Frontend admin.
-2. Frontend kiosk.
-3. Frontend image (Vite build + Nginx serve + proxy `/api`).
-4. Full-stack Docker test.
-5. Demo guide cuối.
+1. Chạy dry-run demo đầy đủ bằng `docker compose up -d --build`.
+2. Test admin: login, employee CRUD, enrollment, attendance history.
+3. Test kiosk: camera, check-in/check-out, người lạ, nhiều khuôn mặt.
+4. Chuẩn bị dữ liệu demo ổn định: 3-5 ảnh enrollment rõ mặt cho mỗi người.
+5. Push/nộp MVP sau khi dry-run không còn lỗi blocker.
