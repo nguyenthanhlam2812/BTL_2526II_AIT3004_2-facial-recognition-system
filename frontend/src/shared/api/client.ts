@@ -4,7 +4,7 @@ import { getToken, clearToken } from "@/shared/lib/token";
 // baseURL = "/api" — dev: qua Vite proxy; prod: qua Nginx trong image frontend
 const baseURL = "/api";
 const DEFAULT_TIMEOUT_MS = 15000;
-const KIOSK_TIMEOUT_MS = 180000;
+const KIOSK_TIMEOUT_MS = 600000;
 
 // --- api: dùng cho admin (gắn JWT, redirect 401) ---
 export const api = axios.create({ baseURL, timeout: DEFAULT_TIMEOUT_MS });
