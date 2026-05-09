@@ -7,7 +7,8 @@ Tài liệu này dùng để chạy thử và demo MVP chấm công bằng nhậ
 Từ thư mục gốc repo:
 
 ```powershell
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 Kiểm tra container:
@@ -42,15 +43,17 @@ admin / admin123
 
 ## Luồng demo chuẩn
 
-1. Mở trang admin và đăng nhập.
-2. Tạo hoặc kiểm tra nhân viên demo.
-3. Upload ảnh enrollment cho nhân viên.
-4. Đợi job enrollment chuyển sang trạng thái hoàn thành.
-5. Mở trang kiosk.
-6. Cho phép trình duyệt truy cập camera.
-7. Chọn `Check-in` hoặc `Check-out`.
-8. Đưa một khuôn mặt vào khung hình và bấm nhận diện.
-9. Mở lịch sử chấm công để kiểm tra bản ghi mới.
+1. Mở `http://localhost:8080/login`, đăng nhập bằng `admin / admin123`.
+2. Hệ thống chuyển sang trang **Dashboard** — hiển thị tổng quan nhân viên và biểu đồ chấm công 7 ngày.
+3. Vào **Nhân viên**, tạo hoặc kiểm tra nhân viên demo.
+4. Vào **Enrollment** của nhân viên, upload 3-5 ảnh rõ mặt.
+5. Đợi job enrollment chuyển sang trạng thái thành công.
+6. Mở trang kiosk (`http://localhost:8080/kiosk`) — giao diện dark mode với camera scan animation.
+7. Cho phép trình duyệt truy cập camera.
+8. Chọn `Check-in` hoặc `Check-out`.
+9. Đưa một khuôn mặt vào khung hình và bấm **Nhận diện**.
+10. Kết quả hiện ngay trên overlay (ghi nhận / không nhận ra / nhiều khuôn mặt).
+11. Quay lại Admin → **Chấm công** để kiểm tra bản ghi mới, hoặc xem Dashboard để thấy số liệu cập nhật.
 
 ## Chuẩn bị ảnh enrollment
 
@@ -69,7 +72,7 @@ Tránh dùng ảnh có nhiều khuôn mặt trong cùng khung hình. Nếu nhân
 Để nhận diện ổn hơn:
 
 - Chỉ để một người trong khung hình.
-- Đưa mặt vào giữa khung hình.
+- Đưa mặt vào giữa khung hình — các góc bracket sẽ sáng lên khi hệ thống đang nhận diện.
 - Giữ khoảng cách vừa phải với camera.
 - Tránh ánh sáng quá gắt sau lưng.
 - Nhìn tương đối thẳng vào camera trong 1 đến 2 giây.
@@ -151,9 +154,10 @@ Listening on enrollment...
 
 - `docker compose ps` hiển thị đủ service `Up`.
 - Mở được `http://localhost:8080/login`.
-- Đăng nhập được bằng `admin / admin123`.
+- Đăng nhập được bằng `admin / admin123`, hệ thống chuyển sang Dashboard.
+- Dashboard hiển thị số liệu nhân viên và biểu đồ.
 - Có ít nhất một nhân viên đã enrollment thành công.
-- Mở được `http://localhost:8080/kiosk`.
-- Camera được cấp quyền.
+- Mở được `http://localhost:8080/kiosk` — thấy giao diện dark, camera scan animation.
+- Camera được cấp quyền, trạng thái hiện "Camera sẵn sàng".
 - Nhận diện thử một lần trước khi demo chính thức để warm-up model.
 - Lịch sử chấm công hiển thị event mới sau khi kiosk ghi nhận.

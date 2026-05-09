@@ -9,28 +9,30 @@ Tài liệu này mô tả kiến trúc triển khai của MVP. Chi tiết API n�
 Bản nộp dùng Docker Compose và image đã push lên Docker Hub. Giảng viên có thể chạy:
 
 ```powershell
+docker compose pull
 docker compose up -d
 ```
 
 Khi developer cần build local:
 
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+docker compose -f docker-compose.build.yml build
+docker compose up -d
 ```
 
 ## Thành phần runtime
 
 | Thành phần | Vai trò |
 | --- | --- |
-| `frontend` | React/Vite SPA được phục vụ bằng Nginx; gồm Admin UI và Kiosk UI; proxy `/api` tới backend |
-| `backend` | FastAPI monolith cho auth, employee, enrollment, attendance và cấu hình hệ thống read-only |
+| `frontend` | React/Vite SPA phục vụ bằng Nginx; gồm Admin UI và Kiosk UI; proxy `/api` tới backend |
+| `backend` | FastAPI monolith cho auth, employee, enrollment, attendance và system settings |
 | `worker` | RQ worker xử lý enrollment background jobs |
 | `mysql` | Source of truth cho dữ liệu nghiệp vụ |
 | `redis` | Queue cho RQ |
 | `minio` | Object storage cho ảnh enrollment và snapshot |
 | `qdrant` | Vector database lưu/search face embedding |
 
-Frontend người dùng trong đề bài chính là `Kiosk UI`: mở camera, gửi frame thời gian thực và hiển thị kết quả chấm công. Frontend quản trị là `Admin UI`: đăng nhập, quản lý nhân viên, upload enrollment, xem lịch sử và xem cấu hình hệ thống.
+Frontend người dùng trong đề bài là `Kiosk UI`: mở camera, gửi frame và hiển thị kết quả chấm công. Frontend quản trị là `Admin UI`: đăng nhập, dashboard tổng quan, quản lý nhân viên, upload enrollment, xem lịch sử và xem cấu hình hệ thống.
 
 ## Cấu trúc repo
 
@@ -38,7 +40,7 @@ Frontend người dùng trong đề bài chính là `Kiosk UI`: mở camera, g�
 backend/
   app/
     api/
-      routes/             API endpoints
+      routes/             API endpoints (auth, employees, enrollments, attendance, system)
       deps.py             dependency chung như auth/db
       router.py           gom router chính
     db/                   session và SQLAlchemy base
@@ -49,20 +51,28 @@ backend/
     main.py               FastAPI app entrypoint
     security.py           JWT/password helpers
   alembic/                database migrations
-  Dockerfile              image cho backend
+  Dockerfile
   docker_entrypoint.py    wait DB, migration, seed, start API
 
 worker/
   app/
     jobs.py               xử lý enrollment jobs
     run_worker.py         RQ worker entrypoint
-  Dockerfile              image cho worker
+  Dockerfile
 
 frontend/
   src/
-    routes/admin/         Admin UI
-    routes/kiosk/         Kiosk UI
-    shared/               API client, hooks, types
+    routes/
+      admin/              Admin UI (Dashboard, Employees, Attendance, Enroll, System)
+      kiosk/              Kiosk UI + ScanFrame component
+    shared/
+      api/                Axios wrappers (auth, employees, attendance, enrollments, kiosk, system)
+      hooks/              useAuth, useRequireAuth
+      types/              TypeScript interfaces cho API
+      ui/                 Shared UI components (StatCard, GlowDot, PageHeader)
+    styles/               globals.css: CSS custom properties, glow utilities, scan animation
+    main.tsx              MantineProvider với dark theme (forceColorScheme="dark")
+    App.tsx               React Router routes
   Dockerfile              build SPA và serve bằng Nginx
   nginx.conf              reverse proxy `/api` tới backend
 
@@ -74,12 +84,12 @@ scripts/
   seed/                   seed admin/demo data
 
 tests/
-  backend/                unit tests cho backend service/route/worker
+  backend/                unit tests cho backend route/service/worker
 
 docs/                     tài liệu kỹ thuật
 requirements/             dependency theo vai trò
 docker-compose.yml        stack dùng image Docker Hub
-docker-compose.build.yml  override để build local
+docker-compose.build.yml  build image từ source local
 ```
 
 ## Quyết định thiết kế
@@ -91,7 +101,8 @@ docker-compose.build.yml  override để build local
 - MinIO lưu object ảnh; Qdrant lưu vector embedding.
 - Logic detect/extract embedding dùng chung qua `backend/app/services/face_analyzer.py`.
 - Nginx nằm trong image `frontend`, không tách service `nginx` riêng trong MVP.
-- Cấu hình hệ thống trên Admin UI là read-only để tránh phát sinh quyền sửa runtime config.
+- System settings endpoint trả cấu hình không nhạy cảm (không có secret key, password) để Admin UI hiển thị read-only.
+- Frontend dùng Mantine v9 với `forceColorScheme="dark"` và custom theme — toàn bộ app dark mode, không toggle.
 
 ## Luồng enrollment
 
@@ -164,6 +175,7 @@ tlam281206/ai-facial-recognition-frontend:latest
 - Kiosk nhận diện được nhân viên đã enroll.
 - Kiosk từ chối được người lạ.
 - Kiosk báo được trường hợp nhiều khuôn mặt.
+- Dashboard hiển thị stat cards và biểu đồ chính xác.
 - History xem được event mới.
 - Admin xem được cấu hình hệ thống read-only.
 - Toàn bộ hệ thống chạy bằng Docker Compose.
