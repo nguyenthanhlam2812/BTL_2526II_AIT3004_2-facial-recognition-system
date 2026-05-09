@@ -111,6 +111,8 @@ Cách xử lý nhanh:
 - Đứng gần camera hơn.
 - Giảm ánh sáng nền phía sau.
 - Test lại với mặt nhìn thẳng.
+- Nếu người đã enroll vẫn thường bị `unknown_face`, thử đặt `ATTENDANCE_THRESHOLD` trong `.env.docker` khoảng `0.28` đến `0.35`.
+- Nếu hệ thống nhận nhầm người lạ, tăng `ATTENDANCE_THRESHOLD` lên cao hơn.
 
 ### Báo nhiều khuôn mặt
 
