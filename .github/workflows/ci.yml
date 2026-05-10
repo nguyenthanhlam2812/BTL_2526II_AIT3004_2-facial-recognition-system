@@ -11,6 +11,8 @@ jobs:
   test:
     name: Run Backend Tests
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
 
     steps:
       - name: Checkout code
