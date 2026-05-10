@@ -82,6 +82,16 @@ services:
     ports:
       - "8080:80"
 
+  # ── Cloudflare Tunnel (chỉ chạy khi bật profile "tunnel") ────
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://frontend:80
+    depends_on:
+      - frontend
+    profiles:
+      - tunnel
+
 volumes:
   mysql_data:
   minio_data:
