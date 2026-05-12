@@ -49,6 +49,7 @@ class Settings(BaseSettings):
 
     redis_url: str = Field(default="redis://127.0.0.1:6379/0")
     enrollment_queue: str = Field(default="enrollment")
+    rate_limit_storage_uri: str = Field(default="memory://")
 
     minio_endpoint: str = Field(default="127.0.0.1:9000")
     minio_access_key: str = Field(default="minioadmin")

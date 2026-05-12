@@ -1,14 +1,23 @@
-from __future__ import annotations
-
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status as http_status
-from fastapi.responses import Response
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status as http_status,
+)
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import require_admin, require_kiosk_token, require_operator
 from backend.app.db.session import get_db
 from backend.app.models.user import User
+from backend.app.rate_limit import limiter
 from backend.app.schemas.attendance import (
     AttendanceActionType,
     AttendanceDailyReportListResponse,
@@ -36,7 +45,10 @@ router = APIRouter(prefix="/attendance", tags=["attendance"])
 
 
 @router.post("/frame", response_model=AttendanceFrameResponse)
+@limiter.limit("10/second")
 def recognize_attendance_frame(
+    request: Request,
+    response: Response,
     image: UploadFile = File(...),
     action_type: AttendanceActionType = Form(...),
     captured_at: datetime | None = Form(default=None),

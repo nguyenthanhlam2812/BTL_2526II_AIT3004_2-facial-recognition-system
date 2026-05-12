@@ -4,9 +4,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from backend.app.api.router import api_router
 from backend.app.config import get_settings, validate_runtime_settings
+from backend.app.rate_limit import limiter
 from backend.app.services.face_analyzer import get_face_app
 
 
@@ -30,6 +34,9 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
 
     @app.get("/healthz", tags=["system"])
     def healthcheck() -> dict[str, str]:

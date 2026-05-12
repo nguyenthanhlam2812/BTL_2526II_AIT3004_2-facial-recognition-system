@@ -17,7 +17,7 @@ import {
   Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconClock, IconLogin2, IconLogout2, IconScan } from "@tabler/icons-react";
+import { IconAlertTriangle, IconClock, IconLogin2, IconLogout2, IconScan } from "@tabler/icons-react";
 import { postAttendanceFrame } from "@/shared/api/kiosk";
 import type { AttendanceActionType, AttendanceFrameResponse } from "@/shared/types/api";
 import GlowDot from "@/shared/ui/GlowDot";
@@ -35,6 +35,8 @@ type ScanRequest = {
 const AUTO_SCAN_INTERVAL_MS = 1600;
 const AUTO_EMPTY_COOLDOWN_MS = 1200;
 const AUTO_UNMATCHED_COOLDOWN_MS = 3500;
+const HEALTHCHECK_TIMEOUT_MS = 3000;
+const HEALTHCHECK_RETRY_INTERVAL_MS = 5000;
 const RESULT_VISIBLE_MS = 4000;
 
 export default function KioskPage() {
@@ -45,12 +47,23 @@ export default function KioskPage() {
   const [actionType, setActionType] = useState<AttendanceActionType>("check_in");
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => window.navigator.onLine);
+  const [serverUnavailable, setServerUnavailable] = useState(false);
   const [autoScanEnabled, setAutoScanEnabled] = useState(true);
   const [result, setResult] = useState<AttendanceFrameResponse | null>(null);
   const [videoDims, setVideoDims] = useState({ width: 0, height: 0 });
 
   const faceState = useFaceDetector(videoRef, cameraReady && !cameraError);
   const detectorUnavailable = Boolean(faceState.error);
+  const isDisconnected = !isOnline || serverUnavailable;
+
+  const clearDisplayedResult = useCallback(() => {
+    if (resultTimerRef.current) {
+      window.clearTimeout(resultTimerRef.current);
+      resultTimerRef.current = null;
+    }
+    setResult(null);
+  }, []);
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -71,6 +84,25 @@ export default function KioskPage() {
   }, []);
 
   useEffect(() => {
+    function handleOnline() {
+      setIsOnline(true);
+    }
+
+    function handleOffline() {
+      autoCooldownUntilRef.current = 0;
+      clearDisplayedResult();
+      setIsOnline(false);
+    }
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [clearDisplayedResult]);
+
+  useEffect(() => {
     return () => {
       if (resultTimerRef.current) {
         window.clearTimeout(resultTimerRef.current);
@@ -78,13 +110,48 @@ export default function KioskPage() {
     };
   }, []);
 
-  const showResult = useCallback((data: AttendanceFrameResponse) => {
-    if (resultTimerRef.current) {
-      window.clearTimeout(resultTimerRef.current);
+  useEffect(() => {
+    if (!isOnline || !serverUnavailable) {
+      return;
     }
+
+    let cancelled = false;
+
+    const probe = async () => {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), HEALTHCHECK_TIMEOUT_MS);
+
+      try {
+        const response = await fetch("/healthz", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!cancelled && response.ok) {
+          setServerUnavailable(false);
+        }
+      } catch {
+        // Keep polling until the backend is reachable again.
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    };
+
+    void probe();
+    const intervalId = window.setInterval(() => {
+      void probe();
+    }, HEALTHCHECK_RETRY_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [isOnline, serverUnavailable]);
+
+  const showResult = useCallback((data: AttendanceFrameResponse) => {
+    clearDisplayedResult();
     setResult(data);
     resultTimerRef.current = window.setTimeout(() => setResult(null), RESULT_VISIBLE_MS);
-  }, []);
+  }, [clearDisplayedResult]);
 
   const captureFrame = useCallback(
     (recordUnmatched: boolean): Promise<AttendanceFrameResponse> => {
@@ -153,6 +220,13 @@ export default function KioskPage() {
       showResult(data);
     },
     onError(err: unknown, variables) {
+      if (isConnectivityError(err)) {
+        setServerUnavailable(true);
+        autoCooldownUntilRef.current = 0;
+        clearDisplayedResult();
+        return;
+      }
+
       if (variables.source === "auto") {
         autoCooldownUntilRef.current = Date.now() + AUTO_UNMATCHED_COOLDOWN_MS;
         return;
@@ -170,13 +244,14 @@ export default function KioskPage() {
   });
 
   const { isPending, mutate } = mutation;
-  const canScan = cameraReady && !cameraError && !isPending;
+  const canScan = cameraReady && !cameraError && !isPending && !isDisconnected;
   const canAutoScan =
     autoScanEnabled &&
     cameraReady &&
     !cameraError &&
     !faceState.loading &&
-    !detectorUnavailable;
+    !detectorUnavailable &&
+    !isDisconnected;
 
   const triggerScan = useCallback(
     (source: ScanSource) => {
@@ -215,19 +290,31 @@ export default function KioskPage() {
   }, [isPending, result]);
 
   const cameraStatusLabel = useMemo(() => {
+    if (!isOnline) return "Mất kết nối mạng";
+    if (serverUnavailable) return "Không kết nối được tới máy chủ";
     if (cameraError) return "Camera lỗi";
     if (!cameraReady) return "Đang mở camera";
     if (faceState.loading) return "Đang tải bộ phát hiện khuôn mặt";
     if (detectorUnavailable) return "Tự động quét không khả dụng, vui lòng quét thủ công";
     if (isPending) return "Đang quét";
     return canAutoScan ? "Tự động quét sẵn sàng" : "Camera sẵn sàng";
-  }, [cameraError, cameraReady, canAutoScan, detectorUnavailable, faceState.loading, isPending]);
+  }, [
+    cameraError,
+    cameraReady,
+    canAutoScan,
+    detectorUnavailable,
+    faceState.loading,
+    isOnline,
+    isPending,
+    serverUnavailable,
+  ]);
 
   const cameraStatus = useMemo(() => {
+    if (isDisconnected) return "danger";
     if (cameraError) return "danger";
     if (!cameraReady || faceState.loading || detectorUnavailable) return "warning";
     return "success";
-  }, [cameraError, cameraReady, detectorUnavailable, faceState.loading]);
+  }, [cameraError, cameraReady, detectorUnavailable, faceState.loading, isDisconnected]);
 
   return (
     <Box
@@ -263,7 +350,7 @@ export default function KioskPage() {
             value={actionType}
             onChange={(value) => {
               autoCooldownUntilRef.current = 0;
-              setResult(null);
+              clearDisplayedResult();
               setActionType(value as AttendanceActionType);
             }}
             data={[
@@ -342,8 +429,11 @@ export default function KioskPage() {
                 width: "100%",
                 minHeight: 460,
                 display: "block",
+                filter: isDisconnected ? "grayscale(0.35) brightness(0.45)" : "none",
                 objectFit: "cover",
+                opacity: isDisconnected ? 0.55 : 1,
                 transform: "scaleX(-1)",
+                transition: "opacity 180ms ease, filter 180ms ease",
               }}
             />
           )}
@@ -356,8 +446,9 @@ export default function KioskPage() {
               height={videoDims.height}
             />
           )}
-          <ScanFrame active={!cameraError} state={scanState} />
+          <ScanFrame active={!cameraError && !isDisconnected} state={scanState} />
           {result && <ResultOverlay result={result} />}
+          {isDisconnected && <OfflineOverlay isOnline={isOnline} />}
         </Box>
 
         <canvas ref={canvasRef} style={{ display: "none" }} />
@@ -367,15 +458,26 @@ export default function KioskPage() {
             <ClockText />
             <Stack gap={2}>
               <Switch
-                checked={canAutoScan}
-                disabled={!!cameraError || !cameraReady || faceState.loading || detectorUnavailable}
+                checked={autoScanEnabled}
+                disabled={
+                  !!cameraError ||
+                  !cameraReady ||
+                  faceState.loading ||
+                  detectorUnavailable ||
+                  isDisconnected
+                }
                 onChange={(event) => {
                   autoCooldownUntilRef.current = 0;
-                  setResult(null);
+                  clearDisplayedResult();
                   setAutoScanEnabled(event.currentTarget.checked);
                 }}
                 label="Tự động quét"
               />
+              {isDisconnected && (
+                <Text size="sm" c="var(--text-secondary)">
+                  Kiosk đang tạm dừng quét cho tới khi kết nối ổn định trở lại.
+                </Text>
+              )}
               {detectorUnavailable && (
                 <Text size="sm" c="var(--text-secondary)">
                   Detector khởi tạo thất bại. Hãy dùng nút quét thủ công.
@@ -486,4 +588,45 @@ function ClockText() {
       </Text>
     </Group>
   );
+}
+
+function OfflineOverlay({ isOnline }: { isOnline: boolean }) {
+  return (
+    <Paper
+      p="xl"
+      radius={0}
+      style={{
+        position: "absolute",
+        inset: 0,
+        display: "grid",
+        placeItems: "center",
+        background: "rgba(8, 10, 16, 0.76)",
+        backdropFilter: "blur(8px)",
+        zIndex: 4,
+      }}
+    >
+      <Stack align="center" gap="sm" maw={420}>
+        <IconAlertTriangle size={42} color="var(--accent-primary-2)" />
+        <Text fw={800} size="xl" c="var(--text-primary)" ta="center">
+          {isOnline ? "Không kết nối được tới máy chủ" : "Mất kết nối mạng"}
+        </Text>
+        <Text size="md" c="var(--text-secondary)" ta="center">
+          Mất kết nối mạng, vui lòng kiểm tra lại đường truyền...
+        </Text>
+      </Stack>
+    </Paper>
+  );
+}
+
+function isConnectivityError(error: unknown) {
+  if (!axios.isAxiosError(error)) {
+    return false;
+  }
+
+  if (error.code === "ERR_NETWORK" || error.code === "ECONNABORTED") {
+    return true;
+  }
+
+  const status = error.response?.status ?? 0;
+  return status >= 500 && status <= 599;
 }

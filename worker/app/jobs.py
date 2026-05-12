@@ -26,6 +26,10 @@ from backend.app.services.qdrant_service import (
 logger = logging.getLogger(__name__)
 
 
+class RetryableEnrollmentInfrastructureError(RuntimeError):
+    pass
+
+
 def process_enrollment_job(payload: dict[str, Any]) -> dict[str, Any]:
     logger.info("Received enrollment job: %s", payload)
 
@@ -47,18 +51,23 @@ def process_enrollment_job(payload: dict[str, Any]) -> dict[str, Any]:
 
         bucket_name = str(payload.get("bucket_name", "enrollments"))
         runtime_settings = get_effective_runtime_settings(db)
-        processed_count = 0
-        failed_count = 0
 
         for image in enrollment.images:
+            if image.processing_status == "success":
+                continue
+            if image.processing_status == "failed":
+                continue
+
             try:
                 image_bytes = download_object_bytes(bucket_name, image.object_key)
                 result = _analyze_image_bytes(image_bytes, runtime_settings)
             except ObjectStorageError as exc:
-                result = {
-                    "status": "failed",
-                    "error_message": str(exc),
-                }
+                _mark_enrollment_pending_for_retry(
+                    db,
+                    enrollment,
+                    f"Temporary object storage error: {exc}",
+                )
+                raise RetryableEnrollmentInfrastructureError(str(exc)) from exc
             except Exception as exc:
                 logger.exception(
                     "Unexpected error while processing enrollment image '%s'.",
@@ -76,7 +85,6 @@ def process_enrollment_job(payload: dict[str, Any]) -> dict[str, Any]:
                     result.get("error_message")
                     or "Enrollment image validation failed."
                 )
-                failed_count += 1
                 continue
 
             try:
@@ -88,38 +96,18 @@ def process_enrollment_job(payload: dict[str, Any]) -> dict[str, Any]:
                     embedding=list(result["embedding"]),
                 )
             except VectorStoreError as exc:
-                image.processing_status = "failed"
-                image.qdrant_point_id = None
-                image.error_message = str(exc)
-                failed_count += 1
-                continue
+                _mark_enrollment_pending_for_retry(
+                    db,
+                    enrollment,
+                    f"Temporary vector store error: {exc}",
+                )
+                raise RetryableEnrollmentInfrastructureError(str(exc)) from exc
 
             image.processing_status = "success"
             image.qdrant_point_id = point_id
             image.error_message = None
-            processed_count += 1
 
-
-        enrollment.processed_count = processed_count
-        enrollment.failed_count = failed_count
-        enrollment.completed_at = datetime.utcnow()
-
-        if processed_count > 0:
-            enrollment.status = "success"
-            if failed_count == 0:
-                enrollment.message = (
-                    f"Indexed {processed_count} image(s) into Qdrant successfully."
-                )
-            else:
-                enrollment.message = (
-                    f"Indexed {processed_count} image(s) into Qdrant, "
-                    f"{failed_count} image(s) failed validation."
-                )
-        else:
-            enrollment.status = "failed"
-            enrollment.message = "All enrollment images failed before Qdrant indexing."
-
-
+        _apply_terminal_enrollment_state(enrollment)
         db.commit()
 
         return {
@@ -135,3 +123,88 @@ def _analyze_image_bytes(image_bytes: bytes, runtime_settings: object) -> dict[s
     if len(parameters) == 1:
         return analyze_image_bytes(image_bytes)
     return analyze_image_bytes(image_bytes, runtime_settings)
+
+
+def mark_enrollment_job_failed_after_retries(job, connection, *exc_info) -> None:
+    del connection
+
+    payload = job.args[0] if job.args else {}
+    job_id = str(payload.get("job_id", ""))
+    error_value = exc_info[1] if len(exc_info) >= 2 else None
+    failure_reason = str(error_value) if error_value else "Enrollment job failed after retries."
+
+    db = SessionLocal()
+    try:
+        enrollment = db.scalar(
+            select(Enrollment)
+            .options(selectinload(Enrollment.images))
+            .where(Enrollment.job_id == job_id)
+        )
+        if enrollment is None:
+            logger.warning("Enrollment job not found while handling retries exhaustion: %s", job_id)
+            return
+
+        for image in enrollment.images:
+            if image.processing_status == "pending":
+                image.processing_status = "failed"
+                image.qdrant_point_id = None
+                image.error_message = failure_reason
+
+        _apply_terminal_enrollment_state(enrollment, failure_reason=failure_reason)
+        db.commit()
+    finally:
+        db.close()
+
+
+def _mark_enrollment_pending_for_retry(
+    db,
+    enrollment: Enrollment,
+    message: str,
+) -> None:
+    processed_count, failed_count = _count_image_states(enrollment)
+    enrollment.status = "pending"
+    enrollment.processed_count = processed_count
+    enrollment.failed_count = failed_count
+    enrollment.completed_at = None
+    enrollment.message = message
+    db.commit()
+
+
+def _apply_terminal_enrollment_state(
+    enrollment: Enrollment,
+    *,
+    failure_reason: str | None = None,
+) -> None:
+    processed_count, failed_count = _count_image_states(enrollment)
+    enrollment.processed_count = processed_count
+    enrollment.failed_count = failed_count
+    enrollment.completed_at = datetime.utcnow()
+
+    if processed_count > 0:
+        enrollment.status = "success"
+        if failed_count == 0:
+            enrollment.message = f"Indexed {processed_count} image(s) into Qdrant successfully."
+            return
+        if failure_reason:
+            enrollment.message = (
+                f"Indexed {processed_count} image(s) into Qdrant, "
+                f"{failed_count} image(s) failed after retry exhaustion."
+            )
+            return
+        enrollment.message = (
+            f"Indexed {processed_count} image(s) into Qdrant, "
+            f"{failed_count} image(s) failed validation."
+        )
+        return
+
+    enrollment.status = "failed"
+    if failure_reason:
+        enrollment.message = f"Enrollment failed after retry exhaustion: {failure_reason}"
+        return
+    enrollment.message = "All enrollment images failed before Qdrant indexing."
+
+
+def _count_image_states(enrollment: Enrollment) -> tuple[int, int]:
+    processed_count = sum(1 for image in enrollment.images if image.processing_status == "success")
+    failed_count = sum(1 for image in enrollment.images if image.processing_status == "failed")
+    return processed_count, failed_count

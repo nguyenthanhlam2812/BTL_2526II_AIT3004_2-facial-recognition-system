@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import select
 
 from backend.app.models.employee import Employee
@@ -73,8 +74,6 @@ def test_process_enrollment_job_marks_images_success_when_indexing_succeeds(
     monkeypatch,
 ):
     enrollment = seed_enrollment(db_session)
-    point_ids = iter(["point-1", "point-2"])
-
     monkeypatch.setattr(worker_jobs, "SessionLocal", lambda: db_session)
     monkeypatch.setattr(
         worker_jobs,
@@ -92,7 +91,7 @@ def test_process_enrollment_job_marks_images_success_when_indexing_succeeds(
     monkeypatch.setattr(
         worker_jobs,
         "upsert_face_embedding",
-        lambda **kwargs: next(point_ids),
+        lambda **kwargs: f"point-{kwargs['enrollment_image_id']}",
     )
 
     result = worker_jobs.process_enrollment_job(
@@ -112,12 +111,12 @@ def test_process_enrollment_job_marks_images_success_when_indexing_succeeds(
 
     images = updated.images
     assert images[0].processing_status == "success"
-    assert images[0].qdrant_point_id == "point-1"
+    assert images[0].qdrant_point_id == f"point-{images[0].id}"
     assert images[1].processing_status == "success"
-    assert images[1].qdrant_point_id == "point-2"
+    assert images[1].qdrant_point_id == f"point-{images[1].id}"
 
 
-def test_process_enrollment_job_marks_images_failed_when_qdrant_upsert_fails(
+def test_process_enrollment_job_retries_when_qdrant_upsert_fails(
     db_session,
     monkeypatch,
 ):
@@ -143,25 +142,25 @@ def test_process_enrollment_job_marks_images_failed_when_qdrant_upsert_fails(
 
     monkeypatch.setattr(worker_jobs, "upsert_face_embedding", fake_upsert)
 
-    result = worker_jobs.process_enrollment_job(
-        {"job_id": enrollment.job_id, "bucket_name": "enrollments"}
-    )
+    with pytest.raises(worker_jobs.RetryableEnrollmentInfrastructureError):
+        worker_jobs.process_enrollment_job(
+            {"job_id": enrollment.job_id, "bucket_name": "enrollments"}
+        )
 
     db_session.expire_all()
     updated = db_session.scalar(
         select(Enrollment).where(Enrollment.id == enrollment.id)
     )
 
-    assert result["status"] == "failed"
     assert updated is not None
-    assert updated.status == "failed"
+    assert updated.status == "pending"
     assert updated.processed_count == 0
-    assert updated.failed_count == 2
+    assert updated.failed_count == 0
 
     for image in updated.images:
-        assert image.processing_status == "failed"
+        assert image.processing_status == "pending"
         assert image.qdrant_point_id is None
-        assert image.error_message == "Cannot upsert embedding to Qdrant."
+        assert image.error_message is None
 
 
 def test_process_enrollment_job_marks_images_failed_when_analysis_fails(
@@ -206,7 +205,7 @@ def test_process_enrollment_job_marks_images_failed_when_analysis_fails(
         assert image.error_message == "No face detected."
 
 
-def test_process_enrollment_job_marks_images_failed_when_download_fails(
+def test_process_enrollment_job_retries_when_download_fails(
     db_session,
     monkeypatch,
 ):
@@ -219,22 +218,57 @@ def test_process_enrollment_job_marks_images_failed_when_download_fails(
 
     monkeypatch.setattr(worker_jobs, "download_object_bytes", fake_download)
 
-    result = worker_jobs.process_enrollment_job(
-        {"job_id": enrollment.job_id, "bucket_name": "enrollments"}
-    )
+    with pytest.raises(worker_jobs.RetryableEnrollmentInfrastructureError):
+        worker_jobs.process_enrollment_job(
+            {"job_id": enrollment.job_id, "bucket_name": "enrollments"}
+        )
 
     db_session.expire_all()
     updated = db_session.scalar(
         select(Enrollment).where(Enrollment.id == enrollment.id)
     )
 
-    assert result["status"] == "failed"
     assert updated is not None
-    assert updated.status == "failed"
+    assert updated.status == "pending"
     assert updated.processed_count == 0
-    assert updated.failed_count == 2
+    assert updated.failed_count == 0
 
     for image in updated.images:
-        assert image.processing_status == "failed"
+        assert image.processing_status == "pending"
         assert image.qdrant_point_id is None
-        assert "Cannot download object" in image.error_message
+        assert image.error_message is None
+
+
+def test_mark_enrollment_job_failed_after_retries_marks_pending_images_failed(
+    db_session,
+    monkeypatch,
+):
+    enrollment = seed_enrollment(db_session)
+    enrollment.images[0].processing_status = "success"
+    enrollment.images[0].qdrant_point_id = "point-1"
+    db_session.commit()
+
+    monkeypatch.setattr(worker_jobs, "SessionLocal", lambda: db_session)
+
+    class DummyJob:
+        args = [{"job_id": enrollment.job_id}]
+
+    worker_jobs.mark_enrollment_job_failed_after_retries(
+        DummyJob(),
+        None,
+        RuntimeError,
+        RuntimeError("Cannot download object 'enrollments/job_123/02_face_2.jpg'."),
+        None,
+    )
+
+    db_session.expire_all()
+    updated = db_session.scalar(select(Enrollment).where(Enrollment.id == enrollment.id))
+
+    assert updated is not None
+    assert updated.status == "success"
+    assert updated.processed_count == 1
+    assert updated.failed_count == 1
+    assert "retry exhaustion" in (updated.message or "").lower()
+    assert updated.images[0].processing_status == "success"
+    assert updated.images[1].processing_status == "failed"
+    assert "Cannot download object" in (updated.images[1].error_message or "")

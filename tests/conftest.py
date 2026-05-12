@@ -94,7 +94,20 @@ def client(db_session, admin_user):
     app.dependency_overrides[require_operator] = override_require_operator
     app.dependency_overrides[require_owner] = override_require_owner
 
+    _reset_rate_limits()
     with TestClient(app) as test_client:
         yield test_client
 
     app.dependency_overrides.clear()
+    _reset_rate_limits()
+
+
+def _reset_rate_limits():
+    limiter = getattr(app.state, "limiter", None)
+    storage = getattr(limiter, "_storage", None)
+    if storage is None:
+        return
+
+    reset = getattr(storage, "reset", None)
+    if callable(reset):
+        reset()

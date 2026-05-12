@@ -107,6 +107,40 @@ def test_post_attendance_frame_ignores_public_record_matched_flag(client, monkey
     assert "record_matched" not in captured
 
 
+def test_post_attendance_frame_rate_limits_after_ten_requests(client, monkeypatch):
+    monkeypatch.setattr(
+        attendance_route,
+        "recognize_attendance_frame_service",
+        lambda *_args, **_kwargs: AttendanceFrameResponse(
+            matched=False,
+            employee=None,
+            score=None,
+            action_type="check_in",
+            attendance_status="unknown_face",
+            message="No face detected.",
+            event_id=None,
+        ),
+    )
+
+    for _ in range(10):
+        response = client.post(
+            "/api/attendance/frame",
+            files={"image": ("frame.jpg", b"fake-image-bytes", "image/jpeg")},
+            data={"action_type": "check_in"},
+            headers=KIOSK_HEADERS,
+        )
+        assert response.status_code == 200
+
+    limited_response = client.post(
+        "/api/attendance/frame",
+        files={"image": ("frame.jpg", b"fake-image-bytes", "image/jpeg")},
+        data={"action_type": "check_in"},
+        headers=KIOSK_HEADERS,
+    )
+
+    assert limited_response.status_code == 429
+
+
 def test_get_attendance_events_returns_service_payload(client, monkeypatch):
     monkeypatch.setattr(
         attendance_route,

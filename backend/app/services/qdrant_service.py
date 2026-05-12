@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from uuid import uuid4
 
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
@@ -61,7 +60,7 @@ def upsert_face_embedding(
 ) -> str:
     client = get_qdrant_client()
     collection_name = ensure_collection_exists()
-    point_id = str(uuid4())
+    point_id = f"enrollment-image-{enrollment_image_id}"
 
     try:
         client.upsert(
