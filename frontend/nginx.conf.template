@@ -11,9 +11,23 @@ server {
     try_files $uri $uri/ /index.html;
   }
 
+  location = /api/attendance/frame {
+    proxy_pass http://backend:8000/api/attendance/frame;
+    proxy_set_header X-Kiosk-Token ${KIOSK_API_TOKEN};
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
+  }
+
   location /api/ {
     proxy_pass http://backend:8000/api/;
     proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_read_timeout 600s;
@@ -23,6 +37,8 @@ server {
   location /healthz {
     proxy_pass http://backend:8000/healthz;
     proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
   }

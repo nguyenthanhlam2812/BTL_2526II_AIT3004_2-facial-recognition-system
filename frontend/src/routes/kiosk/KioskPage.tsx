@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import axios from "axios";
@@ -11,6 +11,7 @@ import {
   Paper,
   SegmentedControl,
   Stack,
+  Switch,
   Text,
   ThemeIcon,
   Title,
@@ -21,14 +22,35 @@ import { postAttendanceFrame } from "@/shared/api/kiosk";
 import type { AttendanceActionType, AttendanceFrameResponse } from "@/shared/types/api";
 import GlowDot from "@/shared/ui/GlowDot";
 import ScanFrame from "@/routes/kiosk/components/ScanFrame";
+import FaceBboxOverlay from "@/routes/kiosk/components/FaceBboxOverlay";
+import { useFaceDetector } from "@/routes/kiosk/hooks/useFaceDetector";
+
+type ScanSource = "auto" | "manual";
+
+type ScanRequest = {
+  source: ScanSource;
+  recordUnmatched: boolean;
+};
+
+const AUTO_SCAN_INTERVAL_MS = 1600;
+const AUTO_EMPTY_COOLDOWN_MS = 1200;
+const AUTO_UNMATCHED_COOLDOWN_MS = 3500;
+const RESULT_VISIBLE_MS = 4000;
 
 export default function KioskPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const autoCooldownUntilRef = useRef(0);
+  const resultTimerRef = useRef<number | null>(null);
   const [actionType, setActionType] = useState<AttendanceActionType>("check_in");
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
+  const [autoScanEnabled, setAutoScanEnabled] = useState(true);
   const [result, setResult] = useState<AttendanceFrameResponse | null>(null);
+  const [videoDims, setVideoDims] = useState({ width: 0, height: 0 });
+
+  const faceState = useFaceDetector(videoRef, cameraReady && !cameraError);
+  const detectorUnavailable = Boolean(faceState.error);
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -48,17 +70,42 @@ export default function KioskPage() {
     return () => stream?.getTracks().forEach((track) => track.stop());
   }, []);
 
-  const mutation = useMutation({
-    mutationFn: (): Promise<AttendanceFrameResponse> => {
+  useEffect(() => {
+    return () => {
+      if (resultTimerRef.current) {
+        window.clearTimeout(resultTimerRef.current);
+      }
+    };
+  }, []);
+
+  const showResult = useCallback((data: AttendanceFrameResponse) => {
+    if (resultTimerRef.current) {
+      window.clearTimeout(resultTimerRef.current);
+    }
+    setResult(data);
+    resultTimerRef.current = window.setTimeout(() => setResult(null), RESULT_VISIBLE_MS);
+  }, []);
+
+  const captureFrame = useCallback(
+    (recordUnmatched: boolean): Promise<AttendanceFrameResponse> => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       if (!video || !canvas || !cameraReady) {
         return Promise.reject(new Error("Camera chưa sẵn sàng"));
       }
 
+      if (!video.videoWidth || !video.videoHeight) {
+        return Promise.reject(new Error("Camera chưa có khung hình"));
+      }
+
+      const context = canvas.getContext("2d");
+      if (!context) {
+        return Promise.reject(new Error("Không thể chụp ảnh"));
+      }
+
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      canvas.getContext("2d")!.drawImage(video, 0, 0);
+      context.drawImage(video, 0, 0);
 
       return new Promise((resolve, reject) => {
         canvas.toBlob(
@@ -67,7 +114,13 @@ export default function KioskPage() {
               reject(new Error("Không thể chụp ảnh"));
               return;
             }
-            postAttendanceFrame(blob, actionType, dayjs().toISOString(), "kiosk-web")
+            postAttendanceFrame(
+              blob,
+              actionType,
+              dayjs().toISOString(),
+              "kiosk-web",
+              recordUnmatched,
+            )
               .then(resolve)
               .catch(reject);
           },
@@ -76,11 +129,35 @@ export default function KioskPage() {
         );
       });
     },
-    onSuccess(data) {
-      setResult(data);
-      window.setTimeout(() => setResult(null), 4000);
+    [actionType, cameraReady],
+  );
+
+  const mutation = useMutation({
+    mutationFn: ({ recordUnmatched }: ScanRequest): Promise<AttendanceFrameResponse> =>
+      captureFrame(recordUnmatched),
+    onSuccess(data, variables) {
+      if (variables.source === "auto") {
+        if (isNoFaceResult(data)) {
+          setResult(null);
+          autoCooldownUntilRef.current = Date.now() + AUTO_EMPTY_COOLDOWN_MS;
+          return;
+        }
+
+        if (data.matched) {
+          autoCooldownUntilRef.current = Date.now() + AUTO_EMPTY_COOLDOWN_MS;
+        } else {
+          autoCooldownUntilRef.current = Date.now() + AUTO_UNMATCHED_COOLDOWN_MS;
+        }
+      }
+
+      showResult(data);
     },
-    onError(err: unknown) {
+    onError(err: unknown, variables) {
+      if (variables.source === "auto") {
+        autoCooldownUntilRef.current = Date.now() + AUTO_UNMATCHED_COOLDOWN_MS;
+        return;
+      }
+
       const message = axios.isAxiosError(err)
         ? err.code === "ECONNABORTED"
           ? "Nhận diện quá lâu. Lần đầu chạy có thể backend đang tải model AI, vui lòng thử lại sau ít phút."
@@ -92,12 +169,65 @@ export default function KioskPage() {
     },
   });
 
+  const { isPending, mutate } = mutation;
+  const canScan = cameraReady && !cameraError && !isPending;
+  const canAutoScan =
+    autoScanEnabled &&
+    cameraReady &&
+    !cameraError &&
+    !faceState.loading &&
+    !detectorUnavailable;
+
+  const triggerScan = useCallback(
+    (source: ScanSource) => {
+      if (!canScan) return;
+      mutate({
+        source,
+        recordUnmatched: source === "manual",
+      });
+    },
+    [canScan, mutate],
+  );
+
+  useEffect(() => {
+    if (!canAutoScan) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      if (Date.now() < autoCooldownUntilRef.current) {
+        return;
+      }
+      if (!faceState.faceDetected) {
+        return;
+      }
+      triggerScan("auto");
+    }, AUTO_SCAN_INTERVAL_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [canAutoScan, faceState.faceDetected, triggerScan]);
+
   const scanState = useMemo(() => {
-    if (mutation.isPending) return "scanning";
+    if (isPending) return "scanning";
     if (result?.matched) return "success";
     if (result && !result.matched) return "fail";
     return "idle";
-  }, [mutation.isPending, result]);
+  }, [isPending, result]);
+
+  const cameraStatusLabel = useMemo(() => {
+    if (cameraError) return "Camera lỗi";
+    if (!cameraReady) return "Đang mở camera";
+    if (faceState.loading) return "Đang tải bộ phát hiện khuôn mặt";
+    if (detectorUnavailable) return "Tự động quét không khả dụng, vui lòng quét thủ công";
+    if (isPending) return "Đang quét";
+    return canAutoScan ? "Tự động quét sẵn sàng" : "Camera sẵn sàng";
+  }, [cameraError, cameraReady, canAutoScan, detectorUnavailable, faceState.loading, isPending]);
+
+  const cameraStatus = useMemo(() => {
+    if (cameraError) return "danger";
+    if (!cameraReady || faceState.loading || detectorUnavailable) return "warning";
+    return "success";
+  }, [cameraError, cameraReady, detectorUnavailable, faceState.loading]);
 
   return (
     <Box
@@ -122,16 +252,20 @@ export default function KioskPage() {
               </Title>
             </Group>
             <Group gap="sm">
-              <GlowDot status={cameraReady ? "success" : cameraError ? "danger" : "warning"} />
+              <GlowDot status={cameraStatus} />
               <Text size="sm" c="var(--text-secondary)">
-                {cameraReady ? "Camera sẵn sàng" : cameraError ? "Camera lỗi" : "Đang mở camera"}
+                {cameraStatusLabel}
               </Text>
             </Group>
           </Stack>
 
           <SegmentedControl
             value={actionType}
-            onChange={(value) => setActionType(value as AttendanceActionType)}
+            onChange={(value) => {
+              autoCooldownUntilRef.current = 0;
+              setResult(null);
+              setActionType(value as AttendanceActionType);
+            }}
             data={[
               {
                 value: "check_in",
@@ -187,7 +321,23 @@ export default function KioskPage() {
               autoPlay
               muted
               playsInline
-              onLoadedMetadata={() => setCameraReady(true)}
+              onLoadedMetadata={() => {
+                setCameraReady(true);
+                if (videoRef.current) {
+                  setVideoDims({
+                    width: videoRef.current.clientWidth,
+                    height: videoRef.current.clientHeight,
+                  });
+                }
+              }}
+              onResize={() => {
+                if (videoRef.current) {
+                  setVideoDims({
+                    width: videoRef.current.clientWidth,
+                    height: videoRef.current.clientHeight,
+                  });
+                }
+              }}
               style={{
                 width: "100%",
                 minHeight: 460,
@@ -198,6 +348,14 @@ export default function KioskPage() {
             />
           )}
 
+          {cameraReady && videoDims.width > 0 && !detectorUnavailable && (
+            <FaceBboxOverlay
+              boxes={faceState.boxes}
+              state={scanState}
+              width={videoDims.width}
+              height={videoDims.height}
+            />
+          )}
           <ScanFrame active={!cameraError} state={scanState} />
           {result && <ResultOverlay result={result} />}
         </Box>
@@ -205,23 +363,47 @@ export default function KioskPage() {
         <canvas ref={canvasRef} style={{ display: "none" }} />
 
         <Group justify="space-between" align="center" wrap="wrap">
-          <ClockText />
+          <Group gap="lg" align="center" wrap="wrap">
+            <ClockText />
+            <Stack gap={2}>
+              <Switch
+                checked={canAutoScan}
+                disabled={!!cameraError || !cameraReady || faceState.loading || detectorUnavailable}
+                onChange={(event) => {
+                  autoCooldownUntilRef.current = 0;
+                  setResult(null);
+                  setAutoScanEnabled(event.currentTarget.checked);
+                }}
+                label="Tự động quét"
+              />
+              {detectorUnavailable && (
+                <Text size="sm" c="var(--text-secondary)">
+                  Detector khởi tạo thất bại. Hãy dùng nút quét thủ công.
+                </Text>
+              )}
+            </Stack>
+          </Group>
           <Button
             size="xl"
             radius="xl"
             w={240}
-            loading={mutation.isPending}
-            disabled={!!cameraError || !cameraReady}
-            onClick={() => mutation.mutate()}
+            variant={canAutoScan ? "light" : "filled"}
+            loading={isPending}
+            disabled={!canScan}
+            onClick={() => triggerScan("manual")}
             leftSection={<IconScan size={22} />}
             className="glow-purple"
           >
-            Nhận diện
+            Quét lại ngay
           </Button>
         </Group>
       </Stack>
     </Box>
   );
+}
+
+function isNoFaceResult(result: AttendanceFrameResponse) {
+  return result.attendance_status === "unknown_face" && result.message === "No face detected.";
 }
 
 function ResultOverlay({ result }: { result: AttendanceFrameResponse }) {

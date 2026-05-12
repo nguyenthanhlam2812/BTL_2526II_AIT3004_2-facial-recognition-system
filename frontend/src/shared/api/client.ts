@@ -17,7 +17,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const status = error.response?.status;
-    if (status === 401 || status === 403) {
+    if (status === 401) {
       clearToken();
       if (!location.pathname.startsWith("/login")) {
         location.href = "/login";

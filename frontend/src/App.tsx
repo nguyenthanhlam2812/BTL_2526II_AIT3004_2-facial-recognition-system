@@ -6,7 +6,9 @@ import EmployeesPage from "@/routes/admin/EmployeesPage";
 import EmployeeFormPage from "@/routes/admin/EmployeeFormPage";
 import EnrollPage from "@/routes/admin/EnrollPage";
 import AttendancePage from "@/routes/admin/AttendancePage";
+import ReportsPage from "@/routes/admin/ReportsPage";
 import SystemPage from "@/routes/admin/SystemPage";
+import UsersPage from "@/routes/admin/UsersPage";
 import KioskPage from "@/routes/kiosk/KioskPage";
 
 export default function App() {
@@ -28,6 +30,8 @@ export default function App() {
 
         {/* Attendance */}
         <Route path="attendance" element={<AttendancePage />} />
+        <Route path="reports" element={<ReportsPage />} />
+        <Route path="users" element={<UsersPage />} />
 
         {/* System settings */}
         <Route path="system" element={<SystemPage />} />

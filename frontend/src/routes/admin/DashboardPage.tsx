@@ -22,8 +22,10 @@ import {
   IconLogin2,
   IconUsers,
 } from "@tabler/icons-react";
-import { listAttendanceEvents } from "@/shared/api/attendance";
-import { listEmployees } from "@/shared/api/employees";
+import {
+  getAttendanceDashboardSummary,
+  listAttendanceEvents,
+} from "@/shared/api/attendance";
 import type { AttendanceEvent, AttendanceStatus } from "@/shared/types/api";
 import GlowDot, { type GlowDotStatus } from "@/shared/ui/GlowDot";
 import PageHeader from "@/shared/ui/PageHeader";
@@ -31,7 +33,7 @@ import StatCard from "@/shared/ui/StatCard";
 
 dayjs.locale("vi");
 
-const EVENT_LIMIT = 100;
+const FEED_EVENT_LIMIT = 100;
 
 function statusMeta(status: AttendanceStatus): { label: string; dot: GlowDotStatus } {
   switch (status) {
@@ -50,77 +52,40 @@ function actionLabel(action: AttendanceEvent["action_type"]) {
   return action === "check_in" ? "Check-in" : "Check-out";
 }
 
+function eventTimestamp(event: AttendanceEvent) {
+  return event.captured_at ?? event.created_at;
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const [range, setRange] = useState("7");
+  const [range, setRange] = useState<"7" | "30">("7");
 
-  const { data: employees } = useQuery({
-    queryKey: ["dashboard-employees"],
-    queryFn: () => listEmployees({ page_size: 100 }),
+  const { data: summary } = useQuery({
+    queryKey: ["dashboard-summary", range],
+    queryFn: () =>
+      getAttendanceDashboardSummary({
+        days: Number(range) as 7 | 30,
+      }),
   });
 
   const { data: events, isLoading: isEventsLoading } = useQuery({
-    queryKey: ["dashboard-attendance"],
-    queryFn: () => listAttendanceEvents({ page: 1, page_size: EVENT_LIMIT }),
+    queryKey: ["dashboard-attendance-feed"],
+    queryFn: () => listAttendanceEvents({ page: 1, page_size: FEED_EVENT_LIMIT }),
   });
 
   const eventItems = useMemo(() => events?.items ?? [], [events?.items]);
-  const totalEmployees = employees?.total ?? 0;
-
-  const stats = useMemo(() => {
-    const start = dayjs().startOf("day");
-    const end = dayjs().endOf("day");
-    const nineAm = start.add(9, "hour");
-    const todayRecorded = eventItems.filter((event) => {
-      const capturedAt = dayjs(event.captured_at);
-      return (
-        event.attendance_status === "recorded" &&
-        capturedAt.isAfter(start) &&
-        capturedAt.isBefore(end)
-      );
-    });
-
-    const presentIds = new Set(
-      todayRecorded
-        .filter((event) => event.action_type === "check_in" && event.employee?.id)
-        .map((event) => event.employee!.id),
-    );
-
-    const lateIds = new Set(
-      todayRecorded
-        .filter((event) => {
-          const capturedAt = dayjs(event.captured_at);
-          return event.action_type === "check_in" && capturedAt.isAfter(nineAm) && event.employee?.id;
-        })
-        .map((event) => event.employee!.id),
-    );
-
-    return {
-      present: presentIds.size,
-      late: lateIds.size,
-      absent: Math.max(totalEmployees - presentIds.size, 0),
-    };
-  }, [eventItems, totalEmployees]);
+  const totalEmployees = summary?.total_employees ?? 0;
+  const stats = summary?.today ?? { present: 0, late: 0, absent: 0 };
 
   const chartData = useMemo(() => {
     const days = Number(range);
-    return Array.from({ length: days }, (_, index) => {
-      const date = dayjs().subtract(days - index - 1, "day");
-      const checkIns = eventItems.filter((event) => {
-        const capturedAt = dayjs(event.captured_at);
-        return (
-          event.attendance_status === "recorded" &&
-          event.action_type === "check_in" &&
-          capturedAt.isSame(date, "day")
-        );
-      }).length;
-
-      return {
-        date: date.format(days > 7 ? "DD/MM" : "ddd"),
-        "Check-in": checkIns,
-      };
-    });
-  }, [eventItems, range]);
+    return (
+      summary?.trend.map((point) => ({
+        date: dayjs(point.date).format(days > 7 ? "DD/MM" : "ddd"),
+        "Check-in": point.check_in_count,
+      })) ?? []
+    );
+  }, [range, summary?.trend]);
 
   const donutData =
     totalEmployees > 0 || stats.present > 0 || stats.late > 0
@@ -135,11 +100,11 @@ export default function DashboardPage() {
     <Stack gap="xl">
       <PageHeader
         title="Tổng quan"
-        subtitle={dayjs().format("dddd, DD/MM/YYYY")}
+        subtitle={`${dayjs().format("dddd, DD/MM/YYYY")} · ${summary?.business_timezone ?? "..."}`}
         actions={
           <SegmentedControl
             value={range}
-            onChange={(value) => setRange(String(value))}
+            onChange={(value) => setRange(value as "7" | "30")}
             data={[
               { value: "7", label: "7 ngày" },
               { value: "30", label: "30 ngày" },
@@ -159,7 +124,7 @@ export default function DashboardPage() {
           label="Có mặt hôm nay"
           value={stats.present}
           accent="success"
-          delta="Recorded"
+          delta="Theo report"
           icon={<IconLogin2 size={22} stroke={1.8} />}
         />
         <StatCard
@@ -191,7 +156,7 @@ export default function DashboardPage() {
               <Stack gap={2}>
                 <Text fw={700}>Check-in theo ngày</Text>
                 <Text size="sm" c="var(--text-secondary)">
-                  Dữ liệu gần nhất từ lịch sử chấm công
+                  Tổng hợp backend theo business timezone
                 </Text>
               </Stack>
               <IconCalendarStats size={22} color="var(--accent-primary-2)" />
@@ -218,7 +183,7 @@ export default function DashboardPage() {
             <Stack gap={2}>
               <Text fw={700}>Trạng thái hôm nay</Text>
               <Text size="sm" c="var(--text-secondary)">
-                Có mặt, đi muộn và vắng mặt
+                Theo report aggregate của backend
               </Text>
             </Stack>
             <DonutChart h={240} data={donutData} thickness={26} paddingAngle={3} />
@@ -283,7 +248,7 @@ export default function DashboardPage() {
                     </Box>
                   </Group>
                   <Text size="xs" c="var(--text-muted)" className="mono">
-                    {dayjs(event.captured_at).format("HH:mm:ss")}
+                    {dayjs(eventTimestamp(event)).format("HH:mm:ss")}
                   </Text>
                 </Group>
               );
@@ -297,7 +262,7 @@ export default function DashboardPage() {
       </Paper>
 
       <Group justify="flex-end">
-        <Button variant="subtle" onClick={() => navigate("/kiosk")}>
+        <Button variant="subtle" onClick={() => window.open("/kiosk", "_blank")}>
           Mở kiosk
         </Button>
       </Group>

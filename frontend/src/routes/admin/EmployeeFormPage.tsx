@@ -1,21 +1,16 @@
 import { useEffect } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  Group,
-  Paper,
-  SegmentedControl,
-  Stack,
-  Text,
-  TextInput,
-} from "@mantine/core";
+import { Button, Group, Paper, SegmentedControl, Stack, Text, TextInput } from "@mantine/core";
 import { useForm, isNotEmpty } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { IconArrowLeft, IconDeviceFloppy } from "@tabler/icons-react";
 import type { AxiosError } from "axios";
 import { createEmployee, updateEmployee } from "@/shared/api/employees";
+import { useRequireAuth } from "@/shared/hooks/useRequireAuth";
+import { canOperate } from "@/shared/lib/access";
 import type { Employee, EmployeeCreate, EmployeeStatus } from "@/shared/types/api";
+import AccessDeniedState from "@/shared/ui/AccessDeniedState";
 import PageHeader from "@/shared/ui/PageHeader";
 
 export default function EmployeeFormPage() {
@@ -23,6 +18,8 @@ export default function EmployeeFormPage() {
   const { id } = useParams<{ id: string }>();
   const { state } = useLocation();
   const queryClient = useQueryClient();
+  const { user } = useRequireAuth();
+  const canMutate = canOperate(user?.role);
 
   const isEdit = !!id;
   const employee = state?.employee as Employee | undefined;
@@ -73,6 +70,16 @@ export default function EmployeeFormPage() {
     },
   });
 
+  if (!canMutate) {
+    return (
+      <AccessDeniedState
+        title="Không đủ quyền thao tác"
+        message="Tài khoản viewer chỉ được xem danh sách nhân viên. Hãy quay lại trang nhân viên hoặc đăng nhập bằng owner/admin."
+        onAction={() => navigate("/admin/employees")}
+      />
+    );
+  }
+
   return (
     <Stack gap="lg" maw={640}>
       <PageHeader
@@ -105,14 +112,10 @@ export default function EmployeeFormPage() {
             <TextInput
               label="Họ và tên"
               description="Tên sẽ xuất hiện ở overlay kiosk khi nhận diện thành công."
-              placeholder="Nguyễn Văn A"
+              placeholder="Nguyen Van A"
               {...form.getInputProps("full_name")}
             />
-            <TextInput
-              label="Phòng ban"
-              placeholder="IT"
-              {...form.getInputProps("department")}
-            />
+            <TextInput label="Phòng ban" placeholder="IT" {...form.getInputProps("department")} />
             <TextInput
               label="Chức vụ"
               placeholder="Software Engineer"
@@ -128,17 +131,17 @@ export default function EmployeeFormPage() {
                 onChange={(value) => form.setFieldValue("status", value as EmployeeStatus)}
                 data={[
                   { value: "active", label: "Hoạt động" },
-                  { value: "inactive", label: "Tạm ngừng" },
+                  { value: "inactive", label: "Tạm ngưng" },
                 ]}
               />
               <Text size="xs" c="var(--text-muted)">
-                Nhân viên tạm ngừng vẫn giữ lịch sử, nhưng không nên dùng để demo check-in mới.
+                Nhân viên tạm ngưng vẫn giữ lịch sử, nhưng không nên dùng để demo check-in mới.
               </Text>
             </Stack>
 
             <Group justify="flex-end" mt="xs">
               <Button variant="default" onClick={() => navigate("/admin/employees")}>
-                Huỷ
+                Hủy
               </Button>
               <Button
                 type="submit"

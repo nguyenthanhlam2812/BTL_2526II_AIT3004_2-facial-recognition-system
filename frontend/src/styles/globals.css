@@ -133,11 +133,20 @@ body {
   box-shadow: 0 0 18px rgba(255, 85, 119, 0.52);
 }
 
+.face-bbox-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
 .scan-frame {
   position: absolute;
   inset: 18px;
   border-radius: 22px;
   pointer-events: none;
+  z-index: 2;
 }
 
 .scan-corner {

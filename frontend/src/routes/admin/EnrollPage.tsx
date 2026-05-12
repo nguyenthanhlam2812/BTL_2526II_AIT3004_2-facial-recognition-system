@@ -27,7 +27,10 @@ import {
 } from "@tabler/icons-react";
 import type { AxiosError } from "axios";
 import { createEnrollment, getEnrollmentJob } from "@/shared/api/enrollments";
+import { useRequireAuth } from "@/shared/hooks/useRequireAuth";
+import { canOperate } from "@/shared/lib/access";
 import type { Employee } from "@/shared/types/api";
+import AccessDeniedState from "@/shared/ui/AccessDeniedState";
 import PageHeader from "@/shared/ui/PageHeader";
 
 const MAX_FILES = 5;
@@ -37,6 +40,8 @@ export default function EnrollPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const { state } = useLocation();
+  const { user } = useRequireAuth();
+  const canMutate = canOperate(user?.role);
   const employee = state?.employee as Employee | undefined;
 
   const [files, setFiles] = useState<File[]>([]);
@@ -47,7 +52,10 @@ export default function EnrollPage() {
     [files],
   );
 
-  useEffect(() => () => previews.forEach((preview) => URL.revokeObjectURL(preview.url)), [previews]);
+  useEffect(
+    () => () => previews.forEach((preview) => URL.revokeObjectURL(preview.url)),
+    [previews],
+  );
 
   const { data: jobStatus } = useQuery({
     queryKey: ["enrollment-job", jobId],
@@ -87,13 +95,23 @@ export default function EnrollPage() {
         ? "Thất bại"
         : "Đang xử lý";
 
+  if (!canMutate) {
+    return (
+      <AccessDeniedState
+        title="Không đủ quyền thao tác"
+        message="Tài khoản viewer chỉ được xem dữ liệu. Enrollment chỉ dành cho owner hoặc admin."
+        onAction={() => navigate("/admin/employees")}
+      />
+    );
+  }
+
   return (
     <Stack gap="lg" maw={720}>
       <PageHeader
-        title={`Enrollment ${employee ? `· ${employee.full_name}` : `#${id}`}`}
+        title={`Enrollment ${employee ? `- ${employee.full_name}` : `#${id}`}`}
         subtitle={
           employee
-            ? `${employee.employee_code} · ${employee.department} · ${employee.position}`
+            ? `${employee.employee_code} - ${employee.department} - ${employee.position}`
             : "Upload ảnh chân dung rõ mặt để tạo embedding nhận diện."
         }
         actions={
@@ -115,8 +133,8 @@ export default function EnrollPage() {
         >
           <Stack gap="lg">
             <Text size="sm" c="var(--text-secondary)">
-              Upload 1-5 ảnh chân dung rõ nét (JPEG/PNG, tối đa 5MB/ảnh). Ảnh tốt nhất:
-              mặt thẳng, đủ ánh sáng, chỉ một người trong khung.
+              Upload 1-5 ảnh chân dung rõ nét (JPEG/PNG, tối đa 5MB/ảnh). Ảnh tốt nhất: mặt
+              thẳng, đủ ánh sáng, chỉ một người trong khung.
             </Text>
 
             <Dropzone
@@ -147,7 +165,7 @@ export default function EnrollPage() {
                   Kéo thả ảnh vào đây, hoặc click để chọn
                 </Text>
                 <Text size="xs" c="var(--text-muted)">
-                  {files.length}/{MAX_FILES} ảnh đã chọn · JPEG/PNG · tối đa 5MB/ảnh
+                  {files.length}/{MAX_FILES} ảnh đã chọn - JPEG/PNG - tối đa 5MB/ảnh
                 </Text>
               </Stack>
             </Dropzone>
@@ -185,10 +203,10 @@ export default function EnrollPage() {
                         </Text>
                       </Box>
                     </Group>
-                    <Tooltip label="Xoá ảnh">
+                    <Tooltip label="Xóa ảnh">
                       <ActionIcon
                         color="red"
-                        aria-label="Xoá ảnh"
+                        aria-label="Xóa ảnh"
                         onClick={() => setFiles((prev) => prev.filter((_, i) => i !== index))}
                       >
                         <IconTrash size={17} />
@@ -201,7 +219,7 @@ export default function EnrollPage() {
 
             <Group justify="flex-end">
               <Button variant="default" onClick={() => navigate("/admin/employees")}>
-                Huỷ
+                Hủy
               </Button>
               <Button
                 disabled={files.length === 0}
@@ -209,7 +227,7 @@ export default function EnrollPage() {
                 onClick={() => submitMutation.mutate()}
                 leftSection={<IconSparkles size={17} />}
               >
-                Upload & Enroll ({files.length} ảnh)
+                Upload và Enroll ({files.length} ảnh)
               </Button>
             </Group>
           </Stack>

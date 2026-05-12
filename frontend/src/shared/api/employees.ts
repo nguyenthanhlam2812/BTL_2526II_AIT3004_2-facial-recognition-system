@@ -3,10 +3,35 @@ import type { Employee, EmployeeCreate, EmployeeListResponse } from "@/shared/ty
 
 export async function listEmployees(params?: {
   q?: string;
+  department?: string;
   page?: number;
   page_size?: number;
 }): Promise<EmployeeListResponse> {
   const { data } = await api.get<EmployeeListResponse>("/employees", { params });
+  return data;
+}
+
+export async function listAllEmployees(): Promise<Employee[]> {
+  const pageSize = 100;
+  const items: Employee[] = [];
+  let page = 1;
+  let total = Number.POSITIVE_INFINITY;
+
+  while ((page - 1) * pageSize < total) {
+    const response = await listEmployees({ page, page_size: pageSize });
+    total = response.total;
+    items.push(...response.items);
+    if (!response.items.length) {
+      break;
+    }
+    page += 1;
+  }
+
+  return items;
+}
+
+export async function listEmployeeDepartments(): Promise<string[]> {
+  const { data } = await api.get<string[]>("/employees/departments");
   return data;
 }
 

@@ -12,6 +12,7 @@ import {
 } from "@mantine/core";
 import {
   IconActivityHeartbeat,
+  IconCalendarStats,
   IconChevronDown,
   IconClockHour4,
   IconDashboard,
@@ -19,6 +20,7 @@ import {
   IconScan,
   IconSettings,
   IconShieldCheck,
+  IconUserCog,
   IconUsers,
 } from "@tabler/icons-react";
 import { useRequireAuth } from "@/shared/hooks/useRequireAuth";
@@ -30,12 +32,15 @@ type NavItem = {
   path: string;
   icon: typeof IconDashboard;
   external?: boolean;
+  ownerOnly?: boolean;
 };
 
 const navItems: NavItem[] = [
   { label: "Tổng quan", path: "/admin/dashboard", icon: IconDashboard },
   { label: "Nhân viên", path: "/admin/employees", icon: IconUsers },
   { label: "Chấm công", path: "/admin/attendance", icon: IconClockHour4 },
+  { label: "Báo cáo", path: "/admin/reports", icon: IconCalendarStats },
+  { label: "Người dùng", path: "/admin/users", icon: IconUserCog, ownerOnly: true },
   { label: "Cấu hình", path: "/admin/system", icon: IconSettings },
   { label: "Kiosk", path: "/kiosk", icon: IconScan, external: true },
 ];
@@ -99,7 +104,7 @@ export default function AdminLayout() {
             </Stack>
           </Group>
 
-          <Menu position="bottom-end" width={210} shadow="lg">
+          <Menu position="bottom-end" width={220} shadow="lg">
             <Menu.Target>
               <UnstyledButton
                 style={{
@@ -113,15 +118,20 @@ export default function AdminLayout() {
                   <Avatar size={30} radius="xl" color="brand">
                     {(user?.username ?? "A").slice(0, 1).toUpperCase()}
                   </Avatar>
-                  <Text size="sm" fw={600} visibleFrom="xs">
-                    {user?.username ?? "admin"}
-                  </Text>
+                  <Stack gap={0} visibleFrom="xs">
+                    <Text size="sm" fw={600}>
+                      {user?.username ?? "admin"}
+                    </Text>
+                    <Text size="xs" c="var(--text-muted)">
+                      {user?.role ?? "admin"}
+                    </Text>
+                  </Stack>
                   <IconChevronDown size={14} color="var(--text-muted)" />
                 </Group>
               </UnstyledButton>
             </Menu.Target>
             <Menu.Dropdown>
-              <Menu.Label>Phiên quản trị</Menu.Label>
+              <Menu.Label>Admin session</Menu.Label>
               <Menu.Item leftSection={<IconLogout size={16} />} color="red" onClick={handleLogout}>
                 Đăng xuất
               </Menu.Item>
@@ -134,6 +144,8 @@ export default function AdminLayout() {
         <Stack justify="space-between" h="100%" gap="lg">
           <Stack gap={6}>
             {navItems.map((item) => {
+              if (item.ownerOnly && user?.role !== "owner") return null;
+
               const Icon = item.icon;
               const active = item.external
                 ? false
