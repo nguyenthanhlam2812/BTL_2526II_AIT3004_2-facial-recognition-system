@@ -1,32 +1,18 @@
 # Hướng dẫn demo
 
-Tài liệu này dùng để chạy thử và demo MVP chấm công bằng nhận diện khuôn mặt.
+Cập nhật: `2026-05-11`.
 
 ## Chạy hệ thống
-
-Từ thư mục gốc repo:
 
 ```powershell
 docker compose pull
 docker compose up -d
 ```
 
-Kiểm tra container:
+Nếu cần smoke-test code local thay vì image Docker Hub:
 
 ```powershell
-docker compose ps
-```
-
-Các service cần ở trạng thái `Up`:
-
-```text
-mysql
-redis
-minio
-qdrant
-backend
-worker
-frontend
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build backend worker frontend
 ```
 
 URL chính:
@@ -35,129 +21,101 @@ URL chính:
 - Kiosk: [http://localhost:8080/kiosk](http://localhost:8080/kiosk)
 - Backend docs: [http://localhost:8000/docs](http://localhost:8000/docs)
 
-Tài khoản admin mặc định:
+Tài khoản admin mặc định cho local:
 
 ```text
 admin / admin123
 ```
 
+## Public demo qua Cloudflare Tunnel
+
+Checklist trước khi bật tunnel:
+
+- Tạo hoặc sửa `.env.docker`
+- Đổi `SEED_ADMIN_PASSWORD`
+- Đổi `JWT_SECRET_KEY`
+- Đổi `KIOSK_API_TOKEN`
+- Xác nhận `docker compose ps` cho thấy stack local đang ổn định
+
+Nếu demo public, phải đổi cả:
+
+- `SEED_ADMIN_PASSWORD`
+- `JWT_SECRET_KEY`
+- `KIOSK_API_TOKEN`
+
+trong `.env.docker`, rồi chạy:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.tunnel.yml --profile tunnel up -d
+```
+
+Nếu cần source local + tunnel:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.tunnel.yml --profile tunnel up -d --build backend worker frontend tunnel
+```
+
 ## Luồng demo chuẩn
 
-1. Mở `http://localhost:8080/login`, đăng nhập bằng `admin / admin123`.
-2. Hệ thống chuyển sang trang **Dashboard** — hiển thị tổng quan nhân viên và biểu đồ chấm công 7 ngày.
-3. Vào **Nhân viên**, tạo hoặc kiểm tra nhân viên demo.
-4. Vào **Enrollment** của nhân viên, upload 3-5 ảnh rõ mặt.
-5. Đợi job enrollment chuyển sang trạng thái thành công.
-6. Mở trang kiosk (`http://localhost:8080/kiosk`) — giao diện dark mode với camera scan animation.
-7. Cho phép trình duyệt truy cập camera.
-8. Chọn `Check-in` hoặc `Check-out`.
-9. Đưa một khuôn mặt vào khung hình và bấm **Nhận diện**.
-10. Kết quả hiện ngay trên overlay (ghi nhận / không nhận ra / nhiều khuôn mặt).
-11. Quay lại Admin → **Chấm công** để kiểm tra bản ghi mới, hoặc xem Dashboard để thấy số liệu cập nhật.
+1. Mở `http://localhost:8080/login`, đăng nhập.
+2. Vào Dashboard để xem tổng nhân viên, có mặt, đi muộn, vắng mặt và biểu đồ 7/30 ngày.
+3. Vào Người dùng, tạo thử account `admin` hoặc `viewer`, đổi quyền/trạng thái nếu cần demo phân quyền.
+4. Vào Cấu hình để đổi mật khẩu admin và sửa threshold/timezone an toàn nếu cần.
+5. Vào Nhân viên, tạo nhân viên mới nếu cần.
+6. Vào Enrollment của nhân viên, upload 3-5 ảnh rõ mặt.
+7. Đợi job enrollment thành công.
+8. Mở `http://localhost:8080/kiosk`, cho phép camera.
+9. Chọn `Check-in` hoặc `Check-out`.
+10. Đưa mặt vào khung hình, kiosk sẽ tự quét.
+11. Quay lại Admin -> Chấm công để xem raw events.
+12. Vào Báo cáo để xem tổng hợp theo ngày và export CSV.
 
-## Chuẩn bị ảnh enrollment
+## Ghi chú về Báo cáo
 
-Nên dùng ít nhất 3 đến 5 ảnh cho mỗi nhân viên:
+- Business timezone: `Asia/Ho_Chi_Minh`
+- Rule đi muộn: `first_check_in > 09:00`
+- Dashboard và Báo cáo dùng cùng source of truth từ backend
+- Report/export bị cap 31 ngày mỗi request
 
-- Ảnh chính diện.
-- Ảnh quay nhẹ sang trái.
-- Ảnh quay nhẹ sang phải.
-- Ảnh trong điều kiện ánh sáng gần giống lúc demo.
-- Ảnh không bị mờ, không che quá nhiều khuôn mặt.
+## Xử lý lỗi thường gặp
 
-Tránh dùng ảnh có nhiều khuôn mặt trong cùng khung hình. Nếu nhân viên hay đeo kính lúc demo, nên có ảnh enrollment cũng đeo kính.
+### Lần đầu nhận diện lâu
 
-## Cách đứng trước camera
-
-Để nhận diện ổn hơn:
-
-- Chỉ để một người trong khung hình.
-- Đưa mặt vào giữa khung hình — các góc bracket sẽ sáng lên khi hệ thống đang nhận diện.
-- Giữ khoảng cách vừa phải với camera.
-- Tránh ánh sáng quá gắt sau lưng.
-- Nhìn tương đối thẳng vào camera trong 1 đến 2 giây.
-
-Nếu đổi góc mặt nhiều hoặc ánh sáng thay đổi mạnh, hệ thống có thể trả `unknown_face`. Đây là giới hạn bình thường của MVP và cần tuning thêm bằng dữ liệu demo tốt hơn.
-
-## Lỗi thường gặp
-
-### Lần đầu nhận diện rất lâu
-
-Nguyên nhân thường là backend đang tải hoặc khởi tạo model InsightFace lần đầu.
-
-Cách xử lý:
+Backend có thể đang warm-up model InsightFace.
 
 ```powershell
 docker compose logs backend --tail=100
 ```
 
-Nếu log đang hiện tiến trình tải model, đợi tải xong rồi bấm nhận diện lại. Model được cache trong Docker volume `insightface_models`, nên các lần chạy sau thường không cần tải lại nếu không xoá volume.
-
-Không dùng lệnh này nếu muốn giữ cache model:
-
-```powershell
-docker compose down -v
-```
-
 ### Không nhận ra khuôn mặt
 
-Nguyên nhân thường gặp:
-
-- Ảnh enrollment chưa đủ đa góc.
-- Khuôn mặt trong camera quá tối, quá xa hoặc bị mờ.
-- Góc mặt lúc demo khác nhiều so với ảnh enrollment.
-- Threshold nhận diện đang chặt.
-
-Cách xử lý nhanh:
-
-- Enroll thêm ảnh rõ và đa góc hơn.
-- Đứng gần camera hơn.
-- Giảm ánh sáng nền phía sau.
-- Test lại với mặt nhìn thẳng.
-- Nếu người đã enroll vẫn thường bị `unknown_face`, thử đặt `ATTENDANCE_THRESHOLD` trong `.env.docker` khoảng `0.28` đến `0.35`.
-- Nếu hệ thống nhận nhầm người lạ, tăng `ATTENDANCE_THRESHOLD` lên cao hơn.
-
-### Báo nhiều khuôn mặt
-
-Nguyên nhân là detector thấy hơn một khuôn mặt hoặc vùng giống khuôn mặt trong khung hình.
-
-Cách xử lý:
-
-- Chỉ để một người trước camera.
-- Dọn nền phía sau nếu có ảnh người, poster hoặc màn hình khác.
-- Đưa mặt demo vào giữa khung hình.
+- Thêm ảnh enrollment đa góc hơn
+- Đứng gần camera hơn
+- Giảm ánh sáng nền phía sau
+- Kiểm tra `ATTENDANCE_THRESHOLD` nếu cần
 
 ### Camera không mở
 
-Cách xử lý:
+- Cho phép camera trong trình duyệt
+- Đóng ứng dụng khác đang dùng webcam
+- Reload kiosk page
 
-- Cho phép quyền camera trong trình duyệt.
-- Đóng ứng dụng khác đang dùng webcam.
-- Reload lại trang kiosk.
-- Thử lại bằng Chrome hoặc Edge.
-
-### Enrollment không chạy
-
-Kiểm tra worker:
+### Worker không xử lý enrollment
 
 ```powershell
 docker compose logs worker --tail=100
 ```
 
-Worker đúng sẽ có dòng:
-
-```text
-Listening on enrollment...
-```
-
 ## Checklist trước khi demo
 
-- `docker compose ps` hiển thị đủ service `Up`.
-- Mở được `http://localhost:8080/login`.
-- Đăng nhập được bằng `admin / admin123`, hệ thống chuyển sang Dashboard.
-- Dashboard hiển thị số liệu nhân viên và biểu đồ.
-- Có ít nhất một nhân viên đã enrollment thành công.
-- Mở được `http://localhost:8080/kiosk` — thấy giao diện dark, camera scan animation.
-- Camera được cấp quyền, trạng thái hiện "Camera sẵn sàng".
-- Nhận diện thử một lần trước khi demo chính thức để warm-up model.
-- Lịch sử chấm công hiển thị event mới sau khi kiosk ghi nhận.
+- `docker compose ps` hiển thị đủ service `Up`
+- Đăng nhập được vào Admin
+- Trang Người dùng tạo/sửa quyền/reset mật khẩu được với owner
+- Cấu hình hệ thống save/reset safe settings được với owner
+- Có ít nhất một nhân viên enroll thành công
+- Kiosk mở được camera
+- Dashboard có dữ liệu
+- Báo cáo mở được và export CSV được
+- Direct `POST http://127.0.0.1:8000/api/attendance/frame` không có `X-Kiosk-Token` bị `401`
+- `POST http://127.0.0.1:8080/api/attendance/frame` qua frontend vẫn hoạt động vì Nginx inject token
+- Nếu bật tunnel public, `.env.docker` đã đổi password admin, JWT secret và kiosk token trước khi chạy lệnh tunnel

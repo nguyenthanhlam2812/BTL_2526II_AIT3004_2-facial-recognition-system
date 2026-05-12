@@ -1,106 +1,98 @@
-# Cloudflare Tunnel – Triển khai hệ thống lên Internet
+# Cloudflare Tunnel
 
-Cập nhật: `2026-05-10`.
+Cap nhat: `2026-05-11`.
 
-## Tổng quan
+## Tong quan
 
-**Cloudflare Tunnel** cho phép expose hệ thống chạy trên máy local (Docker) ra Internet qua HTTPS mà **không cần**:
-- Mua domain.
-- Mở port trên router/firewall.
-- Cấu hình SSL/TLS thủ công.
+Cloudflare Tunnel cho phep expose stack Docker local ra Internet qua HTTPS de demo tu xa.
+Quick Tunnel chi phu hop cho demo co kiem soat, khong phai production.
 
-Rất phù hợp để **demo project** cho giảng viên hoặc bạn bè truy cập từ xa qua điện thoại/laptop.
+## Secret bat buoc truoc khi bat tunnel
 
-## Sơ đồ luồng hoạt động
+Public demo path van duoc support, nhung no phai fail-safe qua `PUBLIC_DEMO_MODE=true`.
+Khi mode nay bat, backend se tu choi startup neu van dung:
 
-```
-Người dùng bên ngoài (điện thoại/laptop)
-  │
-  │  Truy cập URL: https://xxxxx.trycloudflare.com
-  ▼
-Cloudflare Edge Network (HTTPS / SSL termination miễn phí)
-  │
-  │  Tunnel mã hoá
-  ▼
-Container cloudflared (trong Docker Compose trên máy bạn)
-  │
-  │  Forward HTTP request
-  ▼
-Container frontend (Nginx – port 80)
-  ├─ Serve giao diện React (SPA)
-  └─ Proxy /api/* → Container backend (FastAPI – port 8000)
-                         └─ Truy vấn MySQL, Redis, Qdrant, MinIO
+- `SEED_ADMIN_PASSWORD=admin123`
+- `JWT_SECRET_KEY=change-me`
+- `KIOSK_API_TOKEN=local-kiosk-token`
+
+Tao hoac sua `.env.docker`:
+
+```env
+JWT_SECRET_KEY=replace-with-a-long-random-secret
+SEED_ADMIN_USERNAME=admin
+SEED_ADMIN_PASSWORD=replace-with-a-strong-demo-password
+KIOSK_API_TOKEN=replace-with-a-strong-kiosk-token
 ```
 
-## Cách sử dụng
+Checklist nhanh:
 
-### Bước 1: Bật tunnel
+1. `docker compose up -d` da chay on local stack
+2. `.env.docker` da co `JWT_SECRET_KEY` moi
+3. `.env.docker` da co `SEED_ADMIN_PASSWORD` moi
+4. `.env.docker` da co `KIOSK_API_TOKEN` moi
+5. Chi sau do moi bat compose override cho tunnel
 
-Chạy lệnh sau (đảm bảo các service khác đã chạy):
+## Lenh chay dung
+
+Chay full stack local:
 
 ```bash
-# Bật tất cả service + tunnel
-docker compose --profile tunnel up -d
-
-# Hoặc nếu các service khác đã chạy rồi, chỉ bật thêm tunnel
-docker compose --profile tunnel up -d tunnel
+docker compose up -d
 ```
 
-### Bước 2: Lấy URL công khai
+Bat tunnel bang compose override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.tunnel.yml --profile tunnel up -d
+```
+
+Neu can smoke-test source local roi moi mo tunnel:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.tunnel.yml --profile tunnel up -d --build backend worker frontend tunnel
+```
+
+## Lay URL public
 
 ```bash
 docker compose logs tunnel
 ```
 
-Tìm dòng có chứa URL dạng:
+Tim URL dang:
 
+```text
+https://random-name.trycloudflare.com
 ```
-INF | https://random-name-here.trycloudflare.com
-```
 
-Copy URL đó và chia sẻ cho người khác truy cập.
+Su dung:
 
-### Bước 3: Truy cập từ bên ngoài
+- Admin: `https://random-name.trycloudflare.com/login`
+- Kiosk: `https://random-name.trycloudflare.com/kiosk`
 
-- Mở URL trên trình duyệt bất kỳ → thấy trang Login.
-- Đăng nhập bằng tài khoản admin (`admin` / `admin123`).
-- Mở trang Kiosk: thêm `/kiosk` vào cuối URL.
-- Camera hoạt động bình thường qua HTTPS (trình duyệt yêu cầu HTTPS để dùng webcam).
-
-### Tắt tunnel
+## Tat tunnel
 
 ```bash
-docker compose --profile tunnel stop tunnel
+docker compose -f docker-compose.yml -f docker-compose.tunnel.yml --profile tunnel stop tunnel
 ```
 
-Hoặc tắt toàn bộ:
+Tat ca stack:
 
 ```bash
-docker compose --profile tunnel down
+docker compose -f docker-compose.yml -f docker-compose.tunnel.yml --profile tunnel down
 ```
 
-## Lưu ý quan trọng
+## Luu y security
 
-| Đặc điểm | Chi tiết |
-|---|---|
-| **Loại tunnel** | Quick Tunnel (không cần tài khoản Cloudflare) |
-| **URL** | Thay đổi mỗi lần restart container tunnel |
-| **HTTPS** | Tự động, miễn phí, do Cloudflare cấp |
-| **Hiệu năng** | Đủ tốt cho demo, không khuyến khích dùng cho production |
-| **Profile** | Tunnel chỉ chạy khi dùng `--profile tunnel`, không ảnh hưởng lệnh `docker compose up` bình thường |
+- Public demo mode khong dua vao `Host` header de chan credential mac dinh.
+- Security gate nam o startup config: default admin password, default JWT secret va default kiosk token deu bi tu choi khi `PUBLIC_DEMO_MODE=true`.
+- Kiosk page van public, nhung `POST /api/attendance/frame` chi di qua duoc khi co `X-Kiosk-Token`. Frontend/Nginx inject token nay server-side cho flow `/kiosk`.
+- Day van la controlled demo surface, khong phai hardening production-grade nhu device provisioning hay rate-limit.
+- Attendance event hien chua luu snapshot audit vao MinIO; MinIO dang duoc dung cho enrollment images va demo assets.
 
-## Tại sao chọn Cloudflare Tunnel?
+## File lien quan
 
-| Tiêu chí | Cloudflare Tunnel | Ngrok | Port Forwarding |
-|---|---|---|---|
-| Miễn phí | ✅ | ✅ (giới hạn) | ✅ |
-| HTTPS tự động | ✅ | ✅ | ❌ |
-| Không cần mở port router | ✅ | ✅ | ❌ |
-| Không cần đăng ký tài khoản | ✅ (Quick Tunnel) | ❌ | ✅ |
-| Tốc độ | Nhanh (CDN toàn cầu) | Trung bình | Phụ thuộc mạng |
-
-## File liên quan
-
-| File | Mô tả |
-|---|---|
-| `docker-compose.yml` | Service `tunnel` với profile `tunnel` |
+- `docker-compose.yml`: base stack
+- `docker-compose.tunnel.yml`: bat `PUBLIC_DEMO_MODE=true` cho backend
+- `.env.docker`: secret thuc te cho public demo
+- `.env.docker.example`: mau env

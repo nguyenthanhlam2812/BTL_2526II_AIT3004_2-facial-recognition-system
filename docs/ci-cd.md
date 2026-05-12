@@ -1,75 +1,59 @@
-# CI/CD Pipeline – GitHub Actions
+# CI/CD Pipeline
 
-Cập nhật: `2026-05-10`.
+Cap nhat: `2026-05-11`.
 
-## Tổng quan
+## Tong quan
 
-Mỗi khi push code lên nhánh `main` (hoặc tạo Pull Request vào `main`), GitHub Actions sẽ tự động:
+Moi khi push code len `main` hoac tao Pull Request vao `main`, GitHub Actions se:
 
-1. **Chạy test** backend bằng `pytest`.
-2. **Build 3 Docker images** (backend, worker, frontend).
-3. **Push images** lên Docker Hub (chỉ khi push trực tiếp vào `main`, không push khi PR).
+1. Chay backend tests bang `pytest`
+2. Chay `npm run lint` va `npm run build` cho frontend
+3. Validate Docker Compose cho:
+   - default stack
+   - public tunnel stack qua `docker-compose.tunnel.yml`
+4. Build du 3 Docker images: backend, worker, frontend
+5. Push images len Docker Hub chi khi push truc tiep vao `main`
+6. Smoke-test lai dung duong nop bai tren runner sach bang `docker compose pull` va `docker compose up -d`
 
-## Sơ đồ luồng hoạt động
+## Luong hoat dong
 
+```text
+Push/PR vao main
+  -> backend-tests
+       -> pip install requirements/backend.txt + requirements/test.txt
+       -> pytest tests/backend
+  -> frontend-check
+       -> npm ci
+       -> npm run lint
+       -> npm run build
+  -> compose-config
+       -> docker compose config
+       -> docker compose -f docker-compose.yml -f docker-compose.tunnel.yml --profile tunnel config
+  -> docker-images
+       -> build backend/worker/frontend images
+       -> push len Docker Hub neu day la push vao main
+  -> dockerhub-smoke (chi khi push vao main)
+       -> docker compose pull
+       -> docker compose up -d
+       -> health/login/settings OK
+       -> direct backend /attendance/frame khong co token => 401
+       -> frontend proxy /attendance/frame van goi duoc kiosk flow
 ```
-Push code lên main
-  └─> GitHub Actions trigger
-        │
-        ├─ Job 1: test
-        │    ├─ Checkout code
-        │    ├─ Setup Python 3.11 (có cache pip)
-        │    ├─ Install dependencies
-        │    ├─ Chạy pytest tests/backend
-        │    └─ Nếu FAIL → dừng, không build image
-        │
-        └─ Job 2: build-and-push (chỉ chạy nếu Job 1 PASS)
-             ├─ Checkout code
-             ├─ Login Docker Hub (dùng GitHub Secrets)
-             ├─ Setup Docker Buildx (hỗ trợ cache layer)
-             ├─ Build & Push 3 images:
-             │    - tlam281206/ai-facial-recognition-backend:latest
-             │    - tlam281206/ai-facial-recognition-worker:latest
-             │    - tlam281206/ai-facial-recognition-frontend:latest
-             └─ Done ✓
-```
 
-## Cấu hình GitHub Secrets
+## GitHub Secrets
 
-Để workflow hoạt động, cần tạo 2 **Repository Secrets** trên GitHub:
+De push image len Docker Hub, repo can:
 
-1. Vào repo trên GitHub → **Settings** → **Secrets and variables** → **Actions**.
-2. Bấm **New repository secret** và tạo:
+| Secret Name | Gia tri |
+| --- | --- |
+| `DOCKERHUB_USERNAME` | `tlam281206` |
+| `DOCKERHUB_TOKEN` | Docker Hub access token |
 
-| Secret Name | Giá trị | Mô tả |
-|---|---|---|
-| `DOCKERHUB_USERNAME` | `tlam281206` | Tên tài khoản Docker Hub |
-| `DOCKERHUB_TOKEN` | *(Access Token)* | Personal Access Token từ Docker Hub |
+## File lien quan
 
-### Cách tạo Docker Hub Access Token
-
-1. Đăng nhập [hub.docker.com](https://hub.docker.com).
-2. Bấm avatar góc trên phải → **Account Settings**.
-3. Chọn **Personal access tokens** ở menu bên trái.
-4. Bấm **Generate new token**.
-5. Đặt tên (ví dụ: `github-actions`), chọn quyền **Read, Write, Delete**.
-6. Bấm **Generate** → copy chuỗi token (chỉ hiện 1 lần duy nhất).
-7. Dán chuỗi token đó vào GitHub Secret `DOCKERHUB_TOKEN`.
-
-## Xem kết quả CI/CD
-
-1. Vào repo trên GitHub → chọn tab **Actions**.
-2. Mỗi lần push sẽ thấy 1 workflow run mới xuất hiện.
-3. Bấm vào để xem chi tiết từng job (test, build-and-push).
-4. Nếu thấy ✅ xanh = thành công, ❌ đỏ = có lỗi (bấm vào xem log chi tiết).
-
-## Kiểm tra images trên Docker Hub
-
-Sau khi workflow chạy thành công, vào [hub.docker.com/u/tlam281206](https://hub.docker.com/u/tlam281206) để xem 3 repository chứa images mới nhất.
-
-## File liên quan
-
-| File | Mô tả |
-|---|---|
-| `.github/workflows/ci.yml` | File cấu hình workflow GitHub Actions |
-| `requirements/test.txt` | Dependencies riêng cho testing (pytest, httpx) |
+| File | Mo ta |
+| --- | --- |
+| `.github/workflows/ci.yml` | Workflow GitHub Actions |
+| `docker-compose.yml` | Base stack |
+| `docker-compose.tunnel.yml` | Public demo tunnel override |
+| `docker-compose.build.yml` | Source-backed build override |
