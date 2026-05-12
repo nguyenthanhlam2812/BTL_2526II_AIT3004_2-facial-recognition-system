@@ -1,0 +1,12 @@
+services:
+  backend:
+    environment:
+      PUBLIC_DEMO_MODE: "true"
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://frontend:80
+    depends_on:
+      - frontend
+    profiles:
+      - tunnel

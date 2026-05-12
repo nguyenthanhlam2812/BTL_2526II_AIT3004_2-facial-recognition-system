@@ -15,7 +15,10 @@ data/demo/**/*.webp
 
 .claude/
 CLAUDE.md
-docs/frontend-design.md
-docs/learning-notes.md
-docs/plan-week1-login.md
-docs/frontend-redesign-plan.md
+
+docs/*-design.md
+docs/*-plan.md
+docs/*-notes.md
+docs/future-*.md
+docs/plan-*.md
+docs/_notes/

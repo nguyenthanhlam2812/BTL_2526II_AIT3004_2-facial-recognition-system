@@ -77,20 +77,15 @@ services:
   frontend:
     image: tlam281206/ai-facial-recognition-frontend:latest
     restart: unless-stopped
+    env_file:
+      - path: .env.docker.example
+        required: true
+      - path: .env.docker
+        required: false
     depends_on:
       - backend
     ports:
       - "8080:80"
-
-  # ── Cloudflare Tunnel (chỉ chạy khi bật profile "tunnel") ────
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    command: tunnel --no-autoupdate --url http://frontend:80
-    depends_on:
-      - frontend
-    profiles:
-      - tunnel
 
 volumes:
   mysql_data:
