@@ -1,53 +1,58 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
-from fastapi import APIRouter, Depends
-
-from backend.app.api.deps import require_admin
-from backend.app.config import get_settings
+from backend.app.api.deps import require_admin, require_owner
+from backend.app.db.session import get_db
 from backend.app.models.user import User
-from backend.app.schemas.system import RedisConnectionInfo, SystemSettingsResponse
+from backend.app.schemas.system import (
+    SystemSettingsResetRequest,
+    SystemSettingsResponse,
+    SystemSettingsUpdate,
+)
+from backend.app.services.system_settings_service import (
+    SystemSettingsValidationError,
+    build_system_settings_response,
+    reset_system_settings,
+    update_system_settings,
+)
 
 
 router = APIRouter(prefix="/system", tags=["system"])
 
 
-def _parse_redis_url(redis_url: str) -> RedisConnectionInfo:
-    parsed = urlparse(redis_url)
-
-    database: int | None = None
-    if parsed.path and parsed.path != "/":
-        try:
-            database = int(parsed.path.lstrip("/").split("/", maxsplit=1)[0])
-        except ValueError:
-            database = None
-
-    return RedisConnectionInfo(
-        scheme=parsed.scheme or "redis",
-        host=parsed.hostname or "",
-        port=parsed.port,
-        database=database,
-    )
-
-
 @router.get("/settings", response_model=SystemSettingsResponse)
 def get_system_settings(
+    db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> SystemSettingsResponse:
-    settings = get_settings()
+    return build_system_settings_response(db)
 
-    return SystemSettingsResponse(
-        environment=settings.environment,
-        api_prefix=settings.api_prefix,
-        attendance_threshold=settings.attendance_threshold,
-        insightface_model_name=settings.insightface_model_name,
-        face_min_det_score=settings.face_min_det_score,
-        face_min_area_ratio=settings.face_min_area_ratio,
-        face_secondary_area_ratio=settings.face_secondary_area_ratio,
-        warmup_face_model=settings.warmup_face_model,
-        qdrant_url=settings.qdrant_url,
-        qdrant_collection_employee_faces=settings.qdrant_collection_employee_faces,
-        minio_endpoint=settings.minio_endpoint,
-        redis=_parse_redis_url(settings.redis_url),
-    )
+
+@router.patch("/settings", response_model=SystemSettingsResponse)
+def update_system_settings_route(
+    payload: SystemSettingsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_owner),
+) -> SystemSettingsResponse:
+    try:
+        return update_system_settings(
+            db,
+            payload,
+            updated_by_user_id=current_user.id,
+        )
+    except SystemSettingsValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/settings/reset", response_model=SystemSettingsResponse)
+def reset_system_settings_route(
+    payload: SystemSettingsResetRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_owner),
+) -> SystemSettingsResponse:
+    try:
+        return reset_system_settings(db, keys=payload.keys)
+    except SystemSettingsValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

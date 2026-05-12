@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from backend.app.models.employee import Employee
 from backend.app.schemas.employee import EmployeeCreate, EmployeeUpdate
@@ -15,6 +15,7 @@ def list_employees(
     db: Session,
     *,
     q: str | None,
+    department: str | None,
     page: int,
     page_size: int,
 ) -> tuple[list[Employee], int]:
@@ -29,9 +30,15 @@ def list_employees(
                 Employee.position.like(keyword),
             )
         )
+    if department and department.strip():
+        filters.append(func.lower(Employee.department) == department.strip().lower())
 
     total_stmt = select(func.count()).select_from(Employee)
-    items_stmt = select(Employee).order_by(Employee.id.asc())
+    items_stmt = (
+        select(Employee)
+        .options(selectinload(Employee.enrollments))
+        .order_by(Employee.id.asc())
+    )
 
     if filters:
         total_stmt = total_stmt.where(*filters)
@@ -90,6 +97,17 @@ def delete_employee(db: Session, employee_id: int) -> bool:
     db.delete(employee)
     db.commit()
     return True
+
+
+def list_departments(db: Session) -> list[str]:
+    """Return sorted list of distinct, non-empty department names."""
+    stmt = (
+        select(Employee.department)
+        .where(Employee.department.isnot(None), Employee.department != "")
+        .distinct()
+        .order_by(Employee.department.asc())
+    )
+    return list(db.scalars(stmt).all())
 
 
 def ensure_employee_code_available(

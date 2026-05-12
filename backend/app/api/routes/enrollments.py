@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.deps import require_admin
+from backend.app.api.deps import require_admin, require_operator
 from backend.app.db.session import get_db
 from backend.app.models.user import User
 from backend.app.schemas.enrollment import (
@@ -28,7 +28,7 @@ def create_enrollment(
     employee_id: int,
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_operator),
 ) -> EnrollmentCreateResponse:
     try:
         enrollment = create_enrollment_service(db, employee_id, files)

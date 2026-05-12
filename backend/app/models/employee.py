@@ -36,3 +36,20 @@ class Employee(Base):
     attendance_events: Mapped[list["AttendanceEvent"]] = relationship(
         back_populates="employee",
     )
+
+    @property
+    def face_data_status(self) -> str:
+        if not self.enrollments:
+            return "missing"
+
+        latest = max(
+            self.enrollments,
+            key=lambda enrollment: (enrollment.created_at, enrollment.id),
+        )
+        if latest.status == "pending":
+            return "pending"
+        if latest.status == "success":
+            return "enrolled" if latest.processed_count > 0 else "failed"
+        if latest.status == "failed":
+            return "failed"
+        return "missing"

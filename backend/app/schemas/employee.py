@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 EmployeeStatus = Literal["active", "inactive"]
+EmployeeFaceDataStatus = Literal["missing", "pending", "enrolled", "failed"]
 
 
 class EmployeeBase(BaseModel):
@@ -29,6 +30,7 @@ class EmployeeRead(EmployeeBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    face_data_status: EmployeeFaceDataStatus
     created_at: datetime
     updated_at: datetime
 

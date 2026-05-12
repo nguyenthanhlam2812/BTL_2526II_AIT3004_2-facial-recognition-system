@@ -9,6 +9,12 @@ from insightface.app import FaceAnalysis
 from backend.app.config import get_settings
 
 
+class FaceFilterSettings:
+    face_min_det_score: float
+    face_min_area_ratio: float
+    face_secondary_area_ratio: float
+
+
 @lru_cache
 def get_face_app() -> FaceAnalysis:
     settings = get_settings()
@@ -25,8 +31,11 @@ def _bbox_area(face: object) -> float:
     return max(0.0, float((bbox[2] - bbox[0]) * (bbox[3] - bbox[1])))
 
 
-def _valid_faces(faces: list[object], image: np.ndarray) -> list[object]:
-    settings = get_settings()
+def _valid_faces(
+    faces: list[object],
+    image: np.ndarray,
+    settings: FaceFilterSettings,
+) -> list[object]:
     image_area = float(image.shape[0] * image.shape[1])
     if image_area <= 0:
         return []
@@ -41,7 +50,11 @@ def _valid_faces(faces: list[object], image: np.ndarray) -> list[object]:
     return sorted(valid, key=_bbox_area, reverse=True)
 
 
-def analyze_image_bytes(image_bytes: bytes) -> dict[str, object]:
+def analyze_image_bytes(
+    image_bytes: bytes,
+    settings_override: FaceFilterSettings | None = None,
+) -> dict[str, object]:
+    settings = settings_override or get_settings()
     image_array = np.frombuffer(image_bytes, dtype=np.uint8)
     image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
 
@@ -52,7 +65,7 @@ def analyze_image_bytes(image_bytes: bytes) -> dict[str, object]:
             "error_message": "Cannot decode image.",
         }
 
-    faces = _valid_faces(get_face_app().get(image), image)
+    faces = _valid_faces(get_face_app().get(image), image, settings)
     faces_detected = len(faces)
 
     if faces_detected == 0:
@@ -63,7 +76,6 @@ def analyze_image_bytes(image_bytes: bytes) -> dict[str, object]:
         }
 
     primary_face = faces[0]
-    settings = get_settings()
     blocking_secondary_faces = [
         face
         for face in faces[1:]

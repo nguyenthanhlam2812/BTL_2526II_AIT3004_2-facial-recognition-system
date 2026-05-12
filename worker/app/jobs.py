@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import inspect
 import logging
 from typing import Any
 
@@ -13,6 +14,7 @@ from backend.app.services.minio_service import (
     ObjectStorageError,
     download_object_bytes,
 )
+from backend.app.services.system_settings_service import get_effective_runtime_settings
 from worker.app.face_analyzer import analyze_image_bytes
 
 from backend.app.services.qdrant_service import (
@@ -44,13 +46,14 @@ def process_enrollment_job(payload: dict[str, Any]) -> dict[str, Any]:
             }
 
         bucket_name = str(payload.get("bucket_name", "enrollments"))
+        runtime_settings = get_effective_runtime_settings(db)
         processed_count = 0
         failed_count = 0
 
         for image in enrollment.images:
             try:
                 image_bytes = download_object_bytes(bucket_name, image.object_key)
-                result = analyze_image_bytes(image_bytes)
+                result = _analyze_image_bytes(image_bytes, runtime_settings)
             except ObjectStorageError as exc:
                 result = {
                     "status": "failed",
@@ -125,3 +128,10 @@ def process_enrollment_job(payload: dict[str, Any]) -> dict[str, Any]:
         }
     finally:
         db.close()
+
+
+def _analyze_image_bytes(image_bytes: bytes, runtime_settings: object) -> dict[str, Any]:
+    parameters = inspect.signature(analyze_image_bytes).parameters
+    if len(parameters) == 1:
+        return analyze_image_bytes(image_bytes)
+    return analyze_image_bytes(image_bytes, runtime_settings)
