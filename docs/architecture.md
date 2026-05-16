@@ -1,55 +1,38 @@
 # Kiến trúc hệ thống
 
-Cập nhật: `2026-05-08`.
+Cập nhật: `2026-05-09`.
 
-Tài liệu này chỉ mô tả kiến trúc và các quyết định thiết kế chính. Chi tiết API nằm ở `docs/api-contract.md`; chi tiết database/env nằm ở `docs/database-setup.md`.
+Tài liệu này mô tả kiến trúc triển khai của MVP. Chi tiết API nằm ở `docs/api-contract.md`; chi tiết database/env nằm ở `docs/database-setup.md`.
 
 ## Mục tiêu triển khai
 
-Mục tiêu cuối cùng:
+Bản nộp dùng Docker Compose và image đã push lên Docker Hub. Giảng viên có thể chạy:
 
 ```powershell
-docker compose up -d --build
+docker compose up -d
 ```
 
-Stack cuối cần có:
+Khi developer cần build local:
 
-- `mysql`
-- `redis`
-- `minio`
-- `qdrant`
-- `backend`
-- `worker`
-- `frontend` (image bao gồm Nginx phục vụ SPA tĩnh + reverse proxy `/api` tới `backend`)
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+```
 
-Hiện tại đã chạy được bằng Docker:
-
-- `mysql`
-- `redis`
-- `minio`
-- `qdrant`
-- `backend`
-- `worker`
-
-Chưa xong:
-
-- `frontend`
-
-## Thành phần
+## Thành phần runtime
 
 | Thành phần | Vai trò |
 | --- | --- |
-| `backend` | FastAPI monolith cho auth, employee, enrollment, attendance |
+| `frontend` | React/Vite SPA được phục vụ bằng Nginx; gồm Admin UI và Kiosk UI; proxy `/api` tới backend |
+| `backend` | FastAPI monolith cho auth, employee, enrollment, attendance và cấu hình hệ thống read-only |
 | `worker` | RQ worker xử lý enrollment background jobs |
 | `mysql` | Source of truth cho dữ liệu nghiệp vụ |
 | `redis` | Queue cho RQ |
-| `minio` | Lưu ảnh enrollment và snapshot nếu cần |
-| `qdrant` | Lưu/search face embedding |
-| `frontend` | Image multi-stage: build SPA bằng Vite, runtime dùng Nginx phục vụ static + reverse proxy `/api` → `backend` |
+| `minio` | Object storage cho ảnh enrollment và snapshot |
+| `qdrant` | Vector database lưu/search face embedding |
+
+Frontend người dùng trong đề bài chính là `Kiosk UI`: mở camera, gửi frame thời gian thực và hiển thị kết quả chấm công. Frontend quản trị là `Admin UI`: đăng nhập, quản lý nhân viên, upload enrollment, xem lịch sử và xem cấu hình hệ thống.
 
 ## Cấu trúc repo
-
-Cấu trúc repo nên phản ánh đúng kiến trúc: backend monolith, worker nền, AI logic dùng chung, tài liệu và script tách riêng.
 
 ```text
 backend/
@@ -75,6 +58,14 @@ worker/
     run_worker.py         RQ worker entrypoint
   Dockerfile              image cho worker
 
+frontend/
+  src/
+    routes/admin/         Admin UI
+    routes/kiosk/         Kiosk UI
+    shared/               API client, hooks, types
+  Dockerfile              build SPA và serve bằng Nginx
+  nginx.conf              reverse proxy `/api` tới backend
+
 recognition/
   pipelines/              PoC detect/embed/evaluation
 
@@ -87,18 +78,20 @@ tests/
 
 docs/                     tài liệu kỹ thuật
 requirements/             dependency theo vai trò
-docker-compose.yml        stack local/Docker Compose
+docker-compose.yml        stack dùng image Docker Hub
+docker-compose.build.yml  override để build local
 ```
 
 ## Quyết định thiết kế
 
-- Backend là FastAPI monolith, không tách microservice trong MVP.
+- Backend là FastAPI monolith để giữ MVP đơn giản, dễ demo và dễ deploy.
 - Enrollment chạy async qua Redis/RQ vì upload và tạo embedding có thể chậm.
-- Attendance chạy sync trong backend vì kiosk cần phản hồi nhanh.
-- MySQL là nguồn dữ liệu nghiệp vụ chính.
-- MinIO chỉ lưu object; Qdrant chỉ lưu vector index.
+- Attendance chạy sync trong backend vì kiosk cần phản hồi ngay.
+- MySQL lưu dữ liệu nghiệp vụ chính.
+- MinIO lưu object ảnh; Qdrant lưu vector embedding.
 - Logic detect/extract embedding dùng chung qua `backend/app/services/face_analyzer.py`.
-- MVP ưu tiên CPU-first, single-node, dễ demo bằng Docker Compose.
+- Nginx nằm trong image `frontend`, không tách service `nginx` riêng trong MVP.
+- Cấu hình hệ thống trên Admin UI là read-only để tránh phát sinh quyền sửa runtime config.
 
 ## Luồng enrollment
 
@@ -131,7 +124,7 @@ Status MVP:
 
 - `recorded`: nhận diện được nhân viên.
 - `unknown_face`: không nhận diện được hoặc score dưới threshold.
-- `multiple_faces`: frame có nhiều hơn 1 khuôn mặt.
+- `multiple_faces`: frame có nhiều hơn 1 khuôn mặt hợp lệ.
 
 ## Dữ liệu chính
 
@@ -152,35 +145,15 @@ MinIO buckets:
 - `enrollments`
 - `snapshots`
 
-## Trạng thái hiện tại
+## Image Docker Hub
 
-Đã hoàn thành:
+```text
+tlam281206/ai-facial-recognition-backend:latest
+tlam281206/ai-facial-recognition-worker:latest
+tlam281206/ai-facial-recognition-frontend:latest
+```
 
-- Auth admin.
-- Employee CRUD.
-- Enrollment API.
-- Worker enrollment.
-- Qdrant/MinIO integration.
-- Attendance recognition.
-- Attendance history.
-- Backend unit tests.
-- Backend Docker Compose stack.
-
-Chưa hoàn thành:
-
-- Frontend admin.
-- Frontend kiosk.
-- Frontend image (Vite build + Nginx serve + proxy `/api`).
-- Full-stack Compose.
-
-## Mốc tiếp theo
-
-1. Làm frontend admin: login, employee CRUD, upload enrollment, xem job status.
-2. Làm frontend kiosk: camera/frame upload, check-in/check-out, hiển thị kết quả.
-3. Đóng gói frontend bằng image multi-stage (Vite build → Nginx serve + reverse proxy `/api`) và thêm service `frontend` vào `docker-compose.yml`.
-4. Chạy full stack bằng `docker compose up -d --build`.
-
-Thiết kế chi tiết frontend: xem `docs/frontend-design.md`.
+`docker-compose.yml` dùng các image này. `docker-compose.build.yml` chỉ dùng khi developer cần build lại image từ source.
 
 ## Definition of Done cho MVP
 
@@ -188,7 +161,9 @@ Thiết kế chi tiết frontend: xem `docs/frontend-design.md`.
 - CRUD nhân viên được.
 - Upload enrollment được.
 - Worker index embedding vào Qdrant được.
-- Attendance nhận diện được nhân viên đã enroll.
-- Attendance từ chối được người lạ.
+- Kiosk nhận diện được nhân viên đã enroll.
+- Kiosk từ chối được người lạ.
+- Kiosk báo được trường hợp nhiều khuôn mặt.
 - History xem được event mới.
-- Toàn bộ hệ thống chạy bằng `docker compose up -d --build`.
+- Admin xem được cấu hình hệ thống read-only.
+- Toàn bộ hệ thống chạy bằng Docker Compose.

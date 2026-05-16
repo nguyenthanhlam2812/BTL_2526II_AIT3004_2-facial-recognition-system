@@ -1,6 +1,6 @@
 # Hợp đồng API
 
-Cập nhật: `2026-05-08`.
+Cập nhật: `2026-05-09`.
 
 Contract này dùng cho frontend admin/kiosk bám theo backend hiện tại.
 
@@ -216,6 +216,38 @@ Response:
     }
   ],
   "total": 1
+}
+```
+
+## System
+
+### `GET /api/system/settings`
+
+Cần auth admin.
+
+Endpoint này chỉ trả cấu hình không nhạy cảm để Admin UI hiển thị read-only. Response không chứa secret như `JWT_SECRET_KEY`, `MYSQL_PASSWORD`, `MINIO_SECRET_KEY`.
+
+Response:
+
+```json
+{
+  "environment": "development",
+  "api_prefix": "/api",
+  "attendance_threshold": 0.3,
+  "insightface_model_name": "buffalo_l",
+  "face_min_det_score": 0.5,
+  "face_min_area_ratio": 0.015,
+  "face_secondary_area_ratio": 0.35,
+  "warmup_face_model": true,
+  "qdrant_url": "http://qdrant:6333",
+  "qdrant_collection_employee_faces": "employee_faces",
+  "minio_endpoint": "minio:9000",
+  "redis": {
+    "scheme": "redis",
+    "host": "redis",
+    "port": 6379,
+    "database": 0
+  }
 }
 ```
 

@@ -93,3 +93,26 @@ export interface AttendanceEventListResponse {
   items: AttendanceEvent[];
   total: number;
 }
+
+// --- System settings (admin read-only) ---
+export interface RedisConnectionInfo {
+  scheme: string;
+  host: string;
+  port: number | null;
+  database: number | null;
+}
+
+export interface SystemSettingsResponse {
+  environment: string;
+  api_prefix: string;
+  attendance_threshold: number;
+  insightface_model_name: string;
+  face_min_det_score: number;
+  face_min_area_ratio: number;
+  face_secondary_area_ratio: number;
+  warmup_face_model: boolean;
+  qdrant_url: string;
+  qdrant_collection_employee_faces: string;
+  minio_endpoint: string;
+  redis: RedisConnectionInfo;
+}

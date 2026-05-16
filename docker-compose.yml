@@ -41,9 +41,7 @@ services:
       - qdrant_data:/qdrant/storage
 
   backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: tlam281206/ai-facial-recognition-backend:latest
     restart: unless-stopped
     env_file:
       - path: .env.docker.example
@@ -61,9 +59,7 @@ services:
       - "8000:8000"
 
   worker:
-    build:
-      context: .
-      dockerfile: worker/Dockerfile
+    image: tlam281206/ai-facial-recognition-worker:latest
     restart: unless-stopped
     env_file:
       - path: .env.docker.example
@@ -79,9 +75,7 @@ services:
       - insightface_models:/root/.insightface
 
   frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
+    image: tlam281206/ai-facial-recognition-frontend:latest
     restart: unless-stopped
     depends_on:
       - backend

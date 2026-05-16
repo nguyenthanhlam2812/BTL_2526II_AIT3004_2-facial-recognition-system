@@ -1,12 +1,10 @@
 import axios from "axios";
-import { getToken, clearToken } from "@/shared/lib/token";
+import { clearToken, getToken } from "@/shared/lib/token";
 
-// baseURL = "/api" — dev: qua Vite proxy; prod: qua Nginx trong image frontend
 const baseURL = "/api";
 const DEFAULT_TIMEOUT_MS = 15000;
 const KIOSK_TIMEOUT_MS = 600000;
 
-// --- api: dùng cho admin (gắn JWT, redirect 401) ---
 export const api = axios.create({ baseURL, timeout: DEFAULT_TIMEOUT_MS });
 
 api.interceptors.request.use((config) => {
@@ -18,7 +16,8 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+    if (status === 401 || status === 403) {
       clearToken();
       if (!location.pathname.startsWith("/login")) {
         location.href = "/login";
@@ -28,6 +27,4 @@ api.interceptors.response.use(
   },
 );
 
-// --- publicApi: dùng cho kiosk (không gắn JWT, không redirect) ---
-// Sẽ dùng từ tuần 5 khi làm KioskPage
 export const publicApi = axios.create({ baseURL, timeout: KIOSK_TIMEOUT_MS });

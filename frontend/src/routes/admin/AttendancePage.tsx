@@ -2,21 +2,22 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import {
-  Stack,
+  Badge,
+  Button,
   Group,
-  Title,
-  Text,
+  Pagination,
   Paper,
   Select,
+  Stack,
   Table,
-  Badge,
-  Pagination,
-  Button,
+  Text,
 } from "@mantine/core";
 import { DatePickerInput } from "@mantine/dates";
+import { IconRefresh } from "@tabler/icons-react";
 import { listAttendanceEvents } from "@/shared/api/attendance";
 import { listEmployees } from "@/shared/api/employees";
 import type { AttendanceActionType, AttendanceStatus } from "@/shared/types/api";
+import PageHeader from "@/shared/ui/PageHeader";
 
 const PAGE_SIZE = 15;
 
@@ -27,7 +28,7 @@ const ACTION_OPTIONS = [
 
 function actionBadge(action: AttendanceActionType) {
   return (
-    <Badge color={action === "check_in" ? "teal" : "orange"} variant="light" size="sm">
+    <Badge color={action === "check_in" ? "blue" : "brand"} variant="light" size="sm">
       {action === "check_in" ? "Check-in" : "Check-out"}
     </Badge>
   );
@@ -35,7 +36,7 @@ function actionBadge(action: AttendanceActionType) {
 
 function statusBadge(status: AttendanceStatus) {
   const map: Record<AttendanceStatus, { color: string; label: string }> = {
-    recorded: { color: "green", label: "Ghi nhận" },
+    recorded: { color: "teal", label: "Ghi nhận" },
     unknown_face: { color: "red", label: "Không nhận ra" },
     multiple_faces: { color: "yellow", label: "Nhiều khuôn mặt" },
   };
@@ -54,16 +55,15 @@ export default function AttendancePage() {
   const [to, setTo] = useState<string | null>(null);
   const [page, setPage] = useState(1);
 
-  // Backend giới hạn page_size <= 100, nên lấy tối đa 100 nhân viên cho bộ lọc.
   const { data: employeeList, isLoading: isEmployeeListLoading } = useQuery({
     queryKey: ["employees-all"],
     queryFn: () => listEmployees({ page_size: 100 }),
   });
 
   const employeeOptions =
-    employeeList?.items.map((e) => ({
-      value: String(e.id),
-      label: `${e.full_name} (${e.employee_code})`,
+    employeeList?.items.map((employee) => ({
+      value: String(employee.id),
+      label: `${employee.full_name} (${employee.employee_code})`,
     })) ?? [];
 
   const { data, isLoading } = useQuery({
@@ -89,52 +89,64 @@ export default function AttendancePage() {
     setPage(1);
   }
 
-  const rows = data?.items.map((ev) => (
-    <Table.Tr key={ev.id}>
-      <Table.Td fz="sm" style={{ whiteSpace: "nowrap" }}>
-        {dayjs(ev.captured_at).format("DD/MM/YYYY HH:mm:ss")}
+  const rows = data?.items.map((event) => (
+    <Table.Tr key={event.id}>
+      <Table.Td fz="sm" className="mono" style={{ whiteSpace: "nowrap" }}>
+        {dayjs(event.captured_at).format("DD/MM/YYYY HH:mm:ss")}
       </Table.Td>
-      <Table.Td fw={500}>{ev.employee?.full_name ?? "—"}</Table.Td>
-      <Table.Td c="dimmed" fz="sm">
-        {ev.employee?.employee_code ?? "—"}
+      <Table.Td fw={600}>{event.employee?.full_name ?? "—"}</Table.Td>
+      <Table.Td c="var(--text-secondary)" fz="sm" className="mono">
+        {event.employee?.employee_code ?? "—"}
       </Table.Td>
-      <Table.Td>{actionBadge(ev.action_type)}</Table.Td>
-      <Table.Td>{statusBadge(ev.attendance_status)}</Table.Td>
-      <Table.Td fz="sm" c="dimmed">
-        {ev.score !== null ? ev.score.toFixed(3) : "—"}
+      <Table.Td>{actionBadge(event.action_type)}</Table.Td>
+      <Table.Td>{statusBadge(event.attendance_status)}</Table.Td>
+      <Table.Td fz="sm" c="var(--text-secondary)" className="mono">
+        {event.score !== null ? event.score.toFixed(3) : "—"}
       </Table.Td>
-      <Table.Td fz="sm" c="dimmed">
-        {ev.camera_id ?? "—"}
+      <Table.Td fz="sm" c="var(--text-secondary)">
+        {event.camera_id ?? "—"}
       </Table.Td>
     </Table.Tr>
   ));
 
   return (
-    <Stack p="md" gap="md">
-      <Title order={3}>Lịch sử chấm công</Title>
+    <Stack gap="lg">
+      <PageHeader
+        title="Lịch sử chấm công"
+        subtitle="Theo dõi check-in, check-out và kết quả nhận diện từ kiosk."
+      />
 
-      {/* Bộ lọc */}
-      <Paper withBorder p="md" radius="md">
+      <Paper
+        withBorder
+        p="lg"
+        style={{ background: "var(--bg-card)", borderColor: "var(--border-subtle)" }}
+      >
         <Group gap="sm" wrap="wrap" align="flex-end">
           <Select
             label="Nhân viên"
             placeholder="Tất cả"
             data={employeeOptions}
             value={employeeId}
-            onChange={(v) => { setEmployeeId(v); setPage(1); }}
+            onChange={(value) => {
+              setEmployeeId(value);
+              setPage(1);
+            }}
             clearable
             searchable
             nothingFoundMessage={
               isEmployeeListLoading ? "Đang tải nhân viên..." : "Không có nhân viên"
             }
-            w={240}
+            w={260}
           />
           <Select
             label="Loại"
             placeholder="Tất cả"
             data={ACTION_OPTIONS}
             value={actionType}
-            onChange={(v) => { setActionType(v); setPage(1); }}
+            onChange={(value) => {
+              setActionType(value);
+              setPage(1);
+            }}
             clearable
             w={150}
           />
@@ -142,68 +154,73 @@ export default function AttendancePage() {
             label="Từ ngày"
             placeholder="DD/MM/YYYY"
             value={from}
-            onChange={(v) => { setFrom(v); setPage(1); }}
+            onChange={(value) => {
+              setFrom(value);
+              setPage(1);
+            }}
             clearable
             valueFormat="DD/MM/YYYY"
-            w={160}
+            w={170}
           />
           <DatePickerInput
             label="Đến ngày"
             placeholder="DD/MM/YYYY"
             value={to}
-            onChange={(v) => { setTo(v); setPage(1); }}
+            onChange={(value) => {
+              setTo(value);
+              setPage(1);
+            }}
             clearable
             valueFormat="DD/MM/YYYY"
             minDate={from ?? undefined}
-            w={160}
+            w={170}
           />
-          <Button variant="default" onClick={handleReset} mt={24}>
+          <Button variant="default" leftSection={<IconRefresh size={16} />} onClick={handleReset}>
             Xoá lọc
           </Button>
         </Group>
       </Paper>
 
-      {/* Bảng */}
-      <Table striped highlightOnHover withTableBorder>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Thời gian</Table.Th>
-            <Table.Th>Họ tên</Table.Th>
-            <Table.Th>Mã NV</Table.Th>
-            <Table.Th>Hành động</Table.Th>
-            <Table.Th>Trạng thái</Table.Th>
-            <Table.Th>Điểm số</Table.Th>
-            <Table.Th>Camera</Table.Th>
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {isLoading ? (
+      <Paper className="table-shell" p={0}>
+        <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
+          <Table.Thead>
             <Table.Tr>
-              <Table.Td colSpan={7} ta="center" c="dimmed" py="lg">
-                Đang tải...
-              </Table.Td>
+              <Table.Th>Thời gian</Table.Th>
+              <Table.Th>Họ tên</Table.Th>
+              <Table.Th>Mã NV</Table.Th>
+              <Table.Th>Hành động</Table.Th>
+              <Table.Th>Trạng thái</Table.Th>
+              <Table.Th>Điểm số</Table.Th>
+              <Table.Th>Camera</Table.Th>
             </Table.Tr>
-          ) : rows?.length ? (
-            rows
-          ) : (
-            <Table.Tr>
-              <Table.Td colSpan={7} ta="center" c="dimmed" py="lg">
-                Không có dữ liệu chấm công.
-              </Table.Td>
-            </Table.Tr>
-          )}
-        </Table.Tbody>
-      </Table>
+          </Table.Thead>
+          <Table.Tbody>
+            {isLoading ? (
+              <Table.Tr>
+                <Table.Td colSpan={7} ta="center" c="var(--text-secondary)" py="xl">
+                  Đang tải...
+                </Table.Td>
+              </Table.Tr>
+            ) : rows?.length ? (
+              rows
+            ) : (
+              <Table.Tr>
+                <Table.Td colSpan={7} ta="center" c="var(--text-secondary)" py="xl">
+                  Không có dữ liệu chấm công.
+                </Table.Td>
+              </Table.Tr>
+            )}
+          </Table.Tbody>
+        </Table>
+      </Paper>
 
       <Group justify="space-between" align="center">
         {data && (
-          <Text size="sm" c="dimmed">
+          <Text size="sm" c="var(--text-secondary)">
             Tổng: {data.total} bản ghi
           </Text>
         )}
-        {totalPages > 1 && (
-          <Pagination value={page} onChange={setPage} total={totalPages} />
-        )}
+        {totalPages > 1 && <Pagination value={page} onChange={setPage} total={totalPages} />}
       </Group>
     </Stack>
   );

@@ -9,10 +9,23 @@ Check-in/check-out nhân viên bằng nhận diện khuôn mặt.
 Phạm vi MVP:
 
 - 1 điểm chấm công.
-- 1 luồng admin.
-- 1 luồng kiosk.
+- 1 luồng frontend người dùng: Kiosk UI.
+- 1 luồng frontend quản trị: Admin UI.
 - Nhân viên nội bộ.
 - Docker Compose single-node.
+
+## Ánh xạ với đề bài
+
+| Yêu cầu | Cách project đáp ứng |
+| --- | --- |
+| Frontend người dùng | Kiosk UI mở camera, gửi frame và hiển thị kết quả chấm công |
+| Frontend quản trị | Admin UI quản lý nhân viên, enrollment, lịch sử, cấu hình read-only |
+| Backend | FastAPI |
+| Database | MySQL |
+| Object storage | MinIO |
+| Vector database | Qdrant |
+| Message/event queue | Redis + RQ |
+| Nginx/load balancer | Nginx trong frontend container |
 
 ## In scope
 
@@ -23,10 +36,12 @@ Phạm vi MVP:
 - Qdrant search embedding.
 - Kiosk gửi frame check-in/check-out.
 - Lưu attendance history.
-- Đóng gói bằng Docker Compose.
+- Trang admin cấu hình hệ thống read-only.
+- Đóng gói bằng Docker Compose và image Docker Hub.
 
 ## Out of scope
 
+- Employee self-service portal.
 - Multi-camera.
 - Mobile app.
 - Tính công, bảng lương, ca kíp.
@@ -46,13 +61,15 @@ Phạm vi MVP:
 - Attendance API.
 - Attendance history.
 - Backend tests.
-- Backend Docker stack.
 - Frontend admin.
 - Frontend kiosk.
 - Frontend image (Nginx serve + proxy `/api`).
 - Full-stack Compose.
 - Demo guide.
 - AI tuning cơ bản cho demo: threshold, lọc false-positive nhỏ, warm-up model.
+- Trang cấu hình hệ thống read-only.
+- Compose chính dùng image Docker Hub; compose build override dùng cho developer.
+- 3 image Docker Hub đã được build/push với namespace `tlam281206`.
 
 Cần kiểm tra cuối:
 
@@ -68,13 +85,15 @@ Cần kiểm tra cuối:
 - Worker ghi embedding vào Qdrant được.
 - Kiosk nhận diện được nhân viên đã enroll.
 - Kiosk từ chối được người lạ.
+- Kiosk báo được trường hợp nhiều khuôn mặt.
 - History có event mới.
-- `docker compose up -d --build` chạy được full stack.
+- Admin xem được cấu hình hệ thống read-only.
+- `docker compose up -d` chạy được full stack bằng image Docker Hub.
 
 ## Thứ tự làm tiếp
 
-1. Chạy dry-run demo đầy đủ bằng `docker compose up -d --build`.
-2. Test admin: login, employee CRUD, enrollment, attendance history.
-3. Test kiosk: camera, check-in/check-out, người lạ, nhiều khuôn mặt.
-4. Chuẩn bị dữ liệu demo ổn định: 3-5 ảnh enrollment rõ mặt cho mỗi người.
-5. Push/nộp MVP sau khi dry-run không còn lỗi blocker.
+1. Chạy lại bản nộp bằng `docker compose pull` và `docker compose up -d`.
+2. Test dry-run đầy đủ: admin, employee CRUD, enrollment, kiosk, history.
+3. Chuẩn bị dữ liệu demo ổn định: 3-5 ảnh enrollment rõ mặt cho mỗi người.
+4. Commit source code của mốc này.
+5. Nộp repo, Docker Hub images và hướng dẫn demo.

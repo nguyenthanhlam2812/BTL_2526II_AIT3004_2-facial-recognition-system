@@ -1,0 +1,18 @@
+services:
+  backend:
+    image: tlam281206/ai-facial-recognition-backend:latest
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+
+  worker:
+    image: tlam281206/ai-facial-recognition-worker:latest
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+
+  frontend:
+    image: tlam281206/ai-facial-recognition-frontend:latest
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile

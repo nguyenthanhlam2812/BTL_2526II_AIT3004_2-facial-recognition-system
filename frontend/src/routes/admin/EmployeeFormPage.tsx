@@ -1,12 +1,22 @@
 import { useEffect } from "react";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Stack, Group, Title, Button, TextInput, Select, Paper } from "@mantine/core";
+import {
+  Button,
+  Group,
+  Paper,
+  SegmentedControl,
+  Stack,
+  Text,
+  TextInput,
+} from "@mantine/core";
 import { useForm, isNotEmpty } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
+import { IconArrowLeft, IconDeviceFloppy } from "@tabler/icons-react";
 import type { AxiosError } from "axios";
 import { createEmployee, updateEmployee } from "@/shared/api/employees";
-import type { Employee, EmployeeCreate } from "@/shared/types/api";
+import type { Employee, EmployeeCreate, EmployeeStatus } from "@/shared/types/api";
+import PageHeader from "@/shared/ui/PageHeader";
 
 export default function EmployeeFormPage() {
   const navigate = useNavigate();
@@ -17,7 +27,6 @@ export default function EmployeeFormPage() {
   const isEdit = !!id;
   const employee = state?.employee as Employee | undefined;
 
-  // Edit nhưng không có state (reload hoặc vào URL trực tiếp) → về danh sách
   useEffect(() => {
     if (isEdit && !employee) {
       notifications.show({
@@ -65,19 +74,37 @@ export default function EmployeeFormPage() {
   });
 
   return (
-    <Stack p="md" gap="md" maw={560}>
-      <Title order={3}>{isEdit ? "Sửa nhân viên" : "Tạo nhân viên"}</Title>
+    <Stack gap="lg" maw={640}>
+      <PageHeader
+        title={isEdit ? "Sửa nhân viên" : "Tạo nhân viên"}
+        subtitle="Thông tin này dùng để hiển thị ở dashboard, lịch sử chấm công và kết quả kiosk."
+        actions={
+          <Button
+            variant="subtle"
+            leftSection={<IconArrowLeft size={17} />}
+            onClick={() => navigate("/admin/employees")}
+          >
+            Quay lại
+          </Button>
+        }
+      />
 
-      <Paper withBorder p="lg" radius="md">
+      <Paper
+        withBorder
+        p={{ base: "lg", sm: "xl" }}
+        style={{ background: "var(--bg-card)", borderColor: "var(--border-subtle)" }}
+      >
         <form onSubmit={form.onSubmit((values) => mutation.mutate(values))}>
-          <Stack gap="sm">
+          <Stack gap="md">
             <TextInput
               label="Mã nhân viên"
+              description="Nên dùng mã ngắn, duy nhất, dễ đối chiếu khi demo."
               placeholder="E001"
               {...form.getInputProps("employee_code")}
             />
             <TextInput
               label="Họ và tên"
+              description="Tên sẽ xuất hiện ở overlay kiosk khi nhận diện thành công."
               placeholder="Nguyễn Văn A"
               {...form.getInputProps("full_name")}
             />
@@ -91,19 +118,33 @@ export default function EmployeeFormPage() {
               placeholder="Software Engineer"
               {...form.getInputProps("position")}
             />
-            <Select
-              label="Trạng thái"
-              data={[
-                { value: "active", label: "Hoạt động" },
-                { value: "inactive", label: "Tạm ngừng" },
-              ]}
-              {...form.getInputProps("status")}
-            />
+
+            <Stack gap={6}>
+              <Text size="sm" fw={500}>
+                Trạng thái
+              </Text>
+              <SegmentedControl
+                value={form.values.status}
+                onChange={(value) => form.setFieldValue("status", value as EmployeeStatus)}
+                data={[
+                  { value: "active", label: "Hoạt động" },
+                  { value: "inactive", label: "Tạm ngừng" },
+                ]}
+              />
+              <Text size="xs" c="var(--text-muted)">
+                Nhân viên tạm ngừng vẫn giữ lịch sử, nhưng không nên dùng để demo check-in mới.
+              </Text>
+            </Stack>
+
             <Group justify="flex-end" mt="xs">
               <Button variant="default" onClick={() => navigate("/admin/employees")}>
                 Huỷ
               </Button>
-              <Button type="submit" loading={mutation.isPending}>
+              <Button
+                type="submit"
+                loading={mutation.isPending}
+                leftSection={<IconDeviceFloppy size={17} />}
+              >
                 {isEdit ? "Cập nhật" : "Tạo"}
               </Button>
             </Group>
