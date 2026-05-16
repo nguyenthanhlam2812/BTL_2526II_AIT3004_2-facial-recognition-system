@@ -1,0 +1,70 @@
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy.orm import Session
+
+from backend.app.api.deps import require_admin, require_operator
+from backend.app.db.session import get_db
+from backend.app.models.user import User
+from backend.app.schemas.enrollment import (
+    EnrollmentCreateResponse,
+    EnrollmentStatusResponse,
+)
+from backend.app.services.enrollment_service import (
+    EmployeeNotFoundError,
+    EnrollmentInfrastructureError,
+    InvalidEnrollmentFilesError,
+    create_enrollment as create_enrollment_service,
+    get_enrollment_by_job_id,
+)
+
+router = APIRouter(tags=["enrollments"])
+
+
+@router.post(
+    "/employees/{employee_id}/enrollments",
+    response_model=EnrollmentCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_enrollment(
+    employee_id: int,
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_operator),
+) -> EnrollmentCreateResponse:
+    try:
+        enrollment = create_enrollment_service(db, employee_id, files)
+    except EmployeeNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Employee not found.",
+        ) from exc
+    except InvalidEnrollmentFilesError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except EnrollmentInfrastructureError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    return enrollment
+
+
+@router.get(
+    "/enrollments/{job_id}",
+    response_model=EnrollmentStatusResponse,
+)
+def get_enrollment_status(
+    job_id: str,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> EnrollmentStatusResponse:
+    enrollment = get_enrollment_by_job_id(db, job_id)
+    if enrollment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Enrollment job not found.",
+        )
+
+    return enrollment
