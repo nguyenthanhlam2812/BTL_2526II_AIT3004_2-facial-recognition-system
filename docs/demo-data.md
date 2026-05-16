@@ -1,15 +1,12 @@
 # Dữ liệu demo
 
-Cập nhật: `2026-05-08`.
-
-Hiện chưa cần tải dataset lớn để train. Project đang dùng InsightFace pre-trained model, nên MVP chỉ cần bộ ảnh demo nhỏ, rõ mặt và có consent.
+Tài liệu này mô tả bộ dữ liệu tối thiểu để chạy enrollment và demo chấm công.
 
 ## Nguyên tắc
 
 - Không commit dataset lớn vào repo.
 - Không dùng ảnh không rõ nguồn.
 - Không dùng ảnh khi chưa có đồng ý.
-- Dataset lớn chỉ dùng sau này nếu cần evaluate/train riêng.
 
 ## Bộ demo tối thiểu
 
@@ -27,7 +24,7 @@ Hiện chưa cần tải dataset lớn để train. Project đang dùng InsightF
 - Mỗi ảnh enrollment chỉ có 1 khuôn mặt.
 - Không đeo khẩu trang trong ảnh enrollment.
 
-## Consent
+## Đồng ý sử dụng ảnh
 
 - Người trong ảnh đồng ý dùng cho demo học phần.
 - Ảnh không chứa dữ liệu nhạy cảm ngoài phạm vi đồ án.
@@ -48,12 +45,12 @@ data/demo/
     group_01.jpg
 ```
 
-## Threshold
+## Ngưỡng nhận diện
 
 Backend hiện dùng:
 
 ```env
-ATTENDANCE_THRESHOLD=0.4
+ATTENDANCE_THRESHOLD=0.3
 ```
 
-PoC cũ gợi ý threshold khoảng `0.26`, nhưng giá trị vận hành hiện tại là `0.4`. Khi có bộ demo thật lớn hơn, nên rerun evaluation để chốt threshold tốt hơn.
+Nếu bộ ảnh demo thực tế khác nhiều về ánh sáng hoặc góc mặt, có thể điều chỉnh threshold trong `.env.docker` hoặc qua trang `Cấu hình`.

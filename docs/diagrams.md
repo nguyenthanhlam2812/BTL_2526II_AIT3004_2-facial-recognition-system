@@ -1,7 +1,5 @@
 # Sơ đồ hệ thống
 
-Cập nhật: `2026-05-08`.
-
 ## 1. Kiến trúc cuối cùng
 
 ```mermaid
@@ -31,7 +29,7 @@ flowchart LR
     Worker --> MySQL
 ```
 
-## 2. Enrollment
+## 2. Luồng enrollment
 
 ```mermaid
 sequenceDiagram
@@ -55,7 +53,7 @@ sequenceDiagram
     Admin->>Backend: Poll job status
 ```
 
-## 3. Attendance
+## 3. Luồng chấm công
 
 ```mermaid
 sequenceDiagram
@@ -81,7 +79,7 @@ sequenceDiagram
     end
 ```
 
-## 4. Docker startup
+## 4. Khởi động Docker
 
 ```mermaid
 sequenceDiagram
@@ -97,7 +95,7 @@ sequenceDiagram
     Backend->>MySQL: Wait database
     Backend->>Backend: Run migration
     Backend->>Backend: Seed admin
-    Backend->>Backend: Start Uvicorn
+    Backend->>Backend: Khởi động Uvicorn
     Compose->>Worker: Start worker
     Worker->>Redis: Listen enrollment queue
 ```

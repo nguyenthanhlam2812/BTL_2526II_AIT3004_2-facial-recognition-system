@@ -21,7 +21,7 @@ URL chính:
 - Frontend: [http://localhost:8080](http://localhost:8080)
 - Admin: [http://localhost:8080/login](http://localhost:8080/login)
 - Kiosk: [http://localhost:8080/kiosk](http://localhost:8080/kiosk)
-- Backend docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+- Tài liệu API: [http://localhost:8000/docs](http://localhost:8000/docs)
 - MinIO console: [http://localhost:9001](http://localhost:9001)
 
 Tài khoản local seed mặc định:
@@ -55,9 +55,9 @@ flowchart LR
 | Thành phần | Vai trò |
 | --- | --- |
 | `frontend` | React 19 + Vite + Mantine, được serve bằng Nginx |
-| `backend` | FastAPI monolith cho auth, employee, enrollment, attendance, reports, system settings |
+| `backend` | FastAPI monolith cho auth, employee, enrollment, attendance, reports, admin users và system settings |
 | `worker` | RQ worker xử lý enrollment background jobs |
-| `mysql` | Source of truth cho dữ liệu nghiệp vụ |
+| `mysql` | Nguồn dữ liệu chính cho dữ liệu nghiệp vụ |
 | `redis` | Queue cho RQ |
 | `minio` | Object storage cho ảnh enrollment |
 | `qdrant` | Vector database cho embedding khuôn mặt |
@@ -67,11 +67,11 @@ flowchart LR
 
 - Kiosk check-in/check-out bằng camera, tự quét, có chống duplicate theo camera.
 - Employee CRUD và face enrollment pipeline qua Redis/RQ + Qdrant.
-- Dashboard tổng quan dùng backend summary làm source of truth.
+- Dashboard tổng quan dùng backend summary làm nguồn dữ liệu chính.
 - Attendance history có filter, xóa chọn lọc, xóa toàn bộ, export CSV.
-- Daily reports theo business timezone `Asia/Ho_Chi_Minh`, có filter và export CSV.
+- Daily reports theo múi giờ nghiệp vụ `Asia/Ho_Chi_Minh`, có filter và export CSV.
 - Admin user CRUD với 3 role: `owner`, `admin`, `viewer`.
-- Writable system settings an toàn trong UI: threshold, face filters, business timezone, warm-up flag.
+- Cấu hình runtime an toàn có thể sửa trong UI: threshold, face filters, múi giờ nghiệp vụ, cờ warm-up model.
 
 ## Ánh xạ với yêu cầu đề bài
 
@@ -90,7 +90,7 @@ flowchart LR
 
 ## Người dùng, quyền và cấu hình
 
-- `owner`: toàn quyền, quản lý tài khoản quản trị và writable system settings.
+- `owner`: toàn quyền, quản lý tài khoản quản trị và cấu hình runtime an toàn.
 - `admin`: vận hành employee, enrollment, attendance, reports.
 - `viewer`: xem dashboard, reports, history, settings ở chế độ chỉ đọc.
 - `employee` là thực thể nghiệp vụ cho attendance, tách riêng với admin-console users.
@@ -148,9 +148,9 @@ tlam281206/ai-facial-recognition-frontend:latest
 Repo có hai cách chạy:
 
 - `docker-compose.yml`: stack dùng image Docker Hub, đúng đường nộp
-- `docker-compose.build.yml`: override build từ source local để smoke-test patch mới
+- `docker-compose.build.yml`: override build từ mã nguồn local để smoke-test patch mới
 
-Source-backed local smoke:
+Smoke-test local từ mã nguồn:
 
 ```powershell
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build backend worker frontend
@@ -181,11 +181,11 @@ docker compose up -d
 
 ## Quy ước nghiệp vụ
 
-- Business timezone: `Asia/Ho_Chi_Minh`
-- Rule đi muộn: `first_check_in > 09:00`
+- Múi giờ nghiệp vụ: `Asia/Ho_Chi_Minh`
+- Quy tắc đi muộn: `first_check_in > 09:00`
 - Dashboard và Reports dùng cùng aggregate từ backend
-- Daily report/export bị cap 31 ngày mỗi request
-- Attendance CSV raw events bị reject nếu filter hiện tại vượt 50.000 dòng
+- Daily report/export bị giới hạn 31 ngày mỗi request
+- Attendance CSV sự kiện thô bị từ chối nếu filter hiện tại vượt 50.000 dòng
 
 ## Kiểm tra nhanh
 

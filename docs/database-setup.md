@@ -1,46 +1,44 @@
-# Thiet lap database va env
+# Thiết lập database và env
 
-Cap nhat: `2026-05-11`.
+Dự án có 2 chế độ:
 
-Project co 2 che do:
+- Phát triển local: backend/worker chạy bằng `.venv`, dùng `.env`
+- Docker: backend/worker/các dịch vụ phụ trợ chạy bằng Compose, dùng `.env.docker.example` và có thể ghi đè bằng `.env.docker`
 
-- Local dev: backend/worker chay bang `.venv`, dung `.env`
-- Docker: backend/worker/dependencies chay bang Compose, dung `.env.docker.example` va co the override bang `.env.docker`
+## File env
 
-## Env files
-
-| File | Muc dich |
+| File | Mục đích |
 | --- | --- |
-| `.env` | Local dev |
-| `.env.example` | Mau local dev |
-| `.env.docker` | Override Docker, khong bat buoc |
-| `.env.docker.example` | Mac dinh cho Docker Compose |
+| `.env` | Phát triển local |
+| `.env.example` | Mẫu local dev |
+| `.env.docker` | Ghi đè cấu hình Docker, không bắt buộc |
+| `.env.docker.example` | Mặc định cho Docker Compose |
 
-## Admin/public demo env
+## Env cho admin/public demo
 
-| Key | Mac dinh | Muc dich |
+| Key | Mặc định | Mục đích |
 | --- | --- | --- |
-| `SEED_ADMIN` | `true` | Cho phep backend entrypoint tao seed admin neu user chua ton tai |
-| `SEED_ADMIN_USERNAME` | `admin` | Username admin duoc seed |
-| `SEED_ADMIN_PASSWORD` | `admin123` | Password admin local/demo mac dinh |
-| `JWT_SECRET_KEY` | `change-me` | Secret ky JWT |
-| `KIOSK_API_TOKEN` | `local-kiosk-token` | Shared token cho `POST /api/attendance/frame` |
-| `PUBLIC_DEMO_MODE` | `false` | Bat fail-safe startup cho public demo path |
-| `BUSINESS_TIMEZONE` | `Asia/Ho_Chi_Minh` | Timezone nghiep vu cho history/report/dashboard |
+| `SEED_ADMIN` | `true` | Cho phép backend entrypoint tạo seed admin nếu user chưa tồn tại |
+| `SEED_ADMIN_USERNAME` | `admin` | Tên đăng nhập admin được seed |
+| `SEED_ADMIN_PASSWORD` | `admin123` | Mật khẩu admin local/demo mặc định |
+| `JWT_SECRET_KEY` | `change-me` | Secret ký JWT |
+| `KIOSK_API_TOKEN` | `local-kiosk-token` | Token dùng chung cho `POST /api/attendance/frame` |
+| `PUBLIC_DEMO_MODE` | `false` | Bật fail-safe startup cho public demo path |
+| `BUSINESS_TIMEZONE` | `Asia/Ho_Chi_Minh` | Múi giờ nghiệp vụ cho history/report/dashboard |
 
-Neu bat Cloudflare Tunnel hoac expose he thong ra Internet:
+Nếu bật Cloudflare Tunnel hoặc mở hệ thống ra Internet:
 
-1. Tao `.env.docker`
-2. Doi `SEED_ADMIN_PASSWORD`
-3. Doi `JWT_SECRET_KEY`
-4. Doi `KIOSK_API_TOKEN`
-5. Chay Compose kem `docker-compose.tunnel.yml`
+1. Tạo `.env.docker`
+2. Đổi `SEED_ADMIN_PASSWORD`
+3. Đổi `JWT_SECRET_KEY`
+4. Đổi `KIOSK_API_TOKEN`
+5. Chạy Compose kèm `docker-compose.tunnel.yml`
 
-Seed admin chi dung de bootstrap tai khoan ban dau. Neu user da ton tai, script seed se khong ghi de password, role hay trang thai da duoc doi trong UI.
+Seed admin chỉ dùng để bootstrap tài khoản ban đầu. Nếu user đã tồn tại, script seed sẽ không ghi đè password, role hay trạng thái đã được đổi trong UI.
 
 ## Local MySQL
 
-Tao database:
+Tạo database:
 
 ```sql
 CREATE DATABASE IF NOT EXISTS face_attendance
@@ -48,7 +46,7 @@ CHARACTER SET utf8mb4
 COLLATE utf8mb4_unicode_ci;
 ```
 
-Tao user:
+Tạo user:
 
 ```sql
 CREATE USER IF NOT EXISTS 'app'@'localhost' IDENTIFIED BY 'app_password';
@@ -60,7 +58,7 @@ GRANT ALL PRIVILEGES ON face_attendance.* TO 'app'@'127.0.0.1';
 FLUSH PRIVILEGES;
 ```
 
-Neu MySQL local chay port `3307`, `.env` nen co:
+Nếu MySQL local chạy port `3307`, `.env` nên có:
 
 ```env
 MYSQL_HOST=127.0.0.1
@@ -70,7 +68,7 @@ MYSQL_USER=app
 MYSQL_PASSWORD=app_password
 ```
 
-Chay migration va seed:
+Chạy migration và seed:
 
 ```powershell
 .\.venv\Scripts\alembic upgrade head
@@ -85,23 +83,23 @@ docker compose up -d mysql redis minio qdrant backend worker
 docker compose ps
 ```
 
-Public demo path:
+Luồng public demo:
 
 ```powershell
 docker compose -f docker-compose.yml -f docker-compose.tunnel.yml --profile tunnel up -d
 ```
 
-Backend container tu:
+Backend container tự:
 
-1. Wait MySQL
-2. Chay `alembic upgrade head` neu `RUN_MIGRATIONS=true`
-3. Chay `scripts/seed/seed_admin.py` neu `SEED_ADMIN=true`
-4. Validate runtime settings neu `PUBLIC_DEMO_MODE=true`
-5. Start Uvicorn
+1. Chờ MySQL
+2. Chạy `alembic upgrade head` nếu `RUN_MIGRATIONS=true`
+3. Chạy `scripts/seed/seed_admin.py` nếu `SEED_ADMIN=true`
+4. Kiểm tra runtime settings nếu `PUBLIC_DEMO_MODE=true`
+5. Khởi động Uvicorn
 
-## Nguyen tac
+## Nguyên tắc
 
-- Khong tao bang tay roi bo qua migration
-- Khong hard-code host/port DB trong code
-- Khong dung root cho app logic
-- Khi them env key moi, cap nhat ca `.env.example` va `.env.docker.example`
+- Không tạo bảng tay rồi bỏ qua migration
+- Không gắn cứng host/port DB trong code
+- Không dùng root cho app logic
+- Khi thêm env key mới, cập nhật cả `.env.example` và `.env.docker.example`

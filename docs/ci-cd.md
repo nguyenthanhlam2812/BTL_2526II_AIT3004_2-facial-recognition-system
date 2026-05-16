@@ -1,24 +1,22 @@
-# CI/CD Pipeline
+# Pipeline CI/CD
 
-Cap nhat: `2026-05-11`.
+## Tổng quan
 
-## Tong quan
+Mỗi khi push code lên `main` hoặc tạo pull request vào `main`, GitHub Actions sẽ:
 
-Moi khi push code len `main` hoac tao Pull Request vao `main`, GitHub Actions se:
+1. Chạy backend tests bằng `pytest`
+2. Chạy `npm run lint` và `npm run build` cho frontend
+3. Kiểm tra cấu hình Docker Compose cho:
+   - stack mặc định
+   - stack tunnel public qua `docker-compose.tunnel.yml`
+4. Build đủ 3 Docker image: backend, worker, frontend
+5. Đẩy image lên Docker Hub chỉ khi push trực tiếp vào `main`
+6. Smoke-test lại đúng đường nộp bài trên runner sạch bằng `docker compose pull` và `docker compose up -d`
 
-1. Chay backend tests bang `pytest`
-2. Chay `npm run lint` va `npm run build` cho frontend
-3. Validate Docker Compose cho:
-   - default stack
-   - public tunnel stack qua `docker-compose.tunnel.yml`
-4. Build du 3 Docker images: backend, worker, frontend
-5. Push images len Docker Hub chi khi push truc tiep vao `main`
-6. Smoke-test lai dung duong nop bai tren runner sach bang `docker compose pull` va `docker compose up -d`
-
-## Luong hoat dong
+## Luồng hoạt động
 
 ```text
-Push/PR vao main
+Push/PR vào main
   -> backend-tests
        -> pip install requirements/backend.txt + requirements/test.txt
        -> pytest tests/backend
@@ -30,30 +28,30 @@ Push/PR vao main
        -> docker compose config
        -> docker compose -f docker-compose.yml -f docker-compose.tunnel.yml --profile tunnel config
   -> docker-images
-       -> build backend/worker/frontend images
-       -> push len Docker Hub neu day la push vao main
-  -> dockerhub-smoke (chi khi push vao main)
+       -> build image backend/worker/frontend
+       -> push lên Docker Hub nếu đây là push vào main
+  -> dockerhub-smoke (chỉ khi push vào main)
        -> docker compose pull
        -> docker compose up -d
        -> health/login/settings OK
-       -> direct backend /attendance/frame khong co token => 401
-       -> frontend proxy /attendance/frame van goi duoc kiosk flow
+       -> direct backend /attendance/frame không có token => 401
+       -> frontend proxy /attendance/frame vẫn gọi được kiosk flow
 ```
 
 ## GitHub Secrets
 
-De push image len Docker Hub, repo can:
+Để push image lên Docker Hub, repo cần:
 
-| Secret Name | Gia tri |
+| Secret Name | Giá trị |
 | --- | --- |
 | `DOCKERHUB_USERNAME` | `tlam281206` |
 | `DOCKERHUB_TOKEN` | Docker Hub access token |
 
-## File lien quan
+## File liên quan
 
-| File | Mo ta |
+| File | Mô tả |
 | --- | --- |
 | `.github/workflows/ci.yml` | Workflow GitHub Actions |
 | `docker-compose.yml` | Base stack |
 | `docker-compose.tunnel.yml` | Public demo tunnel override |
-| `docker-compose.build.yml` | Source-backed build override |
+| `docker-compose.build.yml` | Override build từ mã nguồn local |

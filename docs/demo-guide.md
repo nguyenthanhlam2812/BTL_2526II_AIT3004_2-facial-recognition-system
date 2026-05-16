@@ -1,7 +1,5 @@
 # Hướng dẫn demo
 
-Cập nhật: `2026-05-11`.
-
 ## Chạy hệ thống
 
 ```powershell
@@ -19,7 +17,7 @@ URL chính:
 
 - Admin: [http://localhost:8080/login](http://localhost:8080/login)
 - Kiosk: [http://localhost:8080/kiosk](http://localhost:8080/kiosk)
-- Backend docs: [http://localhost:8000/docs](http://localhost:8000/docs)
+- Tài liệu API: [http://localhost:8000/docs](http://localhost:8000/docs)
 
 Tài khoản admin mặc định cho local:
 
@@ -37,19 +35,13 @@ Checklist trước khi bật tunnel:
 - Đổi `KIOSK_API_TOKEN`
 - Xác nhận `docker compose ps` cho thấy stack local đang ổn định
 
-Nếu demo public, phải đổi cả:
-
-- `SEED_ADMIN_PASSWORD`
-- `JWT_SECRET_KEY`
-- `KIOSK_API_TOKEN`
-
-trong `.env.docker`, rồi chạy:
+Sau đó chạy:
 
 ```powershell
 docker compose -f docker-compose.yml -f docker-compose.tunnel.yml --profile tunnel up -d
 ```
 
-Nếu cần source local + tunnel:
+Nếu cần build từ mã nguồn local rồi mở tunnel:
 
 ```powershell
 docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.tunnel.yml --profile tunnel up -d --build backend worker frontend tunnel
@@ -59,7 +51,7 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compo
 
 1. Mở `http://localhost:8080/login`, đăng nhập.
 2. Vào Dashboard để xem tổng nhân viên, có mặt, đi muộn, vắng mặt và biểu đồ 7/30 ngày.
-3. Vào Người dùng, tạo thử account `admin` hoặc `viewer`, đổi quyền/trạng thái nếu cần demo phân quyền.
+3. Vào Người dùng, tạo thử tài khoản `viewer` hoặc `admin` phụ nếu cần demo phân quyền.
 4. Vào Cấu hình để đổi mật khẩu admin và sửa threshold/timezone an toàn nếu cần.
 5. Vào Nhân viên, tạo nhân viên mới nếu cần.
 6. Vào Enrollment của nhân viên, upload 3-5 ảnh rõ mặt.
@@ -67,21 +59,21 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml -f docker-compo
 8. Mở `http://localhost:8080/kiosk`, cho phép camera.
 9. Chọn `Check-in` hoặc `Check-out`.
 10. Đưa mặt vào khung hình, kiosk sẽ tự quét.
-11. Quay lại Admin -> Chấm công để xem raw events.
+11. Quay lại Admin -> Chấm công để xem sự kiện thô.
 12. Vào Báo cáo để xem tổng hợp theo ngày và export CSV.
 
-## Ghi chú về Báo cáo
+## Ghi chú về báo cáo
 
-- Business timezone: `Asia/Ho_Chi_Minh`
-- Rule đi muộn: `first_check_in > 09:00`
-- Dashboard và Báo cáo dùng cùng source of truth từ backend
-- Report/export bị cap 31 ngày mỗi request
+- Múi giờ nghiệp vụ: `Asia/Ho_Chi_Minh`
+- Quy tắc đi muộn: `first_check_in > 09:00`
+- Dashboard và Báo cáo dùng cùng nguồn dữ liệu từ backend
+- Report/export bị giới hạn 31 ngày mỗi request
 
 ## Xử lý lỗi thường gặp
 
 ### Lần đầu nhận diện lâu
 
-Backend có thể đang warm-up model InsightFace.
+Backend có thể đang khởi tạo model InsightFace.
 
 ```powershell
 docker compose logs backend --tail=100
@@ -111,7 +103,7 @@ docker compose logs worker --tail=100
 - `docker compose ps` hiển thị đủ service `Up`
 - Đăng nhập được vào Admin
 - Trang Người dùng tạo/sửa quyền/reset mật khẩu được với owner
-- Cấu hình hệ thống save/reset safe settings được với owner
+- Cấu hình hệ thống lưu/reset cấu hình an toàn được với owner
 - Có ít nhất một nhân viên enroll thành công
 - Kiosk mở được camera
 - Dashboard có dữ liệu
