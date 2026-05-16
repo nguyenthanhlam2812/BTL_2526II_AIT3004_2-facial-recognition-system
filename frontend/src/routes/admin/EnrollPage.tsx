@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ActionIcon,
+  Alert,
   Badge,
   Box,
   Button,
   Group,
   Image,
   Paper,
+  SegmentedControl,
   Stack,
   Text,
   ThemeIcon,
@@ -18,6 +20,8 @@ import { Dropzone, IMAGE_MIME_TYPE } from "@mantine/dropzone";
 import { notifications } from "@mantine/notifications";
 import {
   IconArrowLeft,
+  IconCamera,
+  IconCameraOff,
   IconCheck,
   IconPhoto,
   IconSparkles,
@@ -35,6 +39,7 @@ import PageHeader from "@/shared/ui/PageHeader";
 
 const MAX_FILES = 5;
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
+type EnrollMode = "upload" | "camera";
 
 export default function EnrollPage() {
   const navigate = useNavigate();
@@ -46,6 +51,12 @@ export default function EnrollPage() {
 
   const [files, setFiles] = useState<File[]>([]);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [mode, setMode] = useState<EnrollMode>("upload");
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const previews = useMemo(
     () => files.map((file) => ({ file, url: URL.createObjectURL(file) })),
@@ -55,6 +66,113 @@ export default function EnrollPage() {
   useEffect(
     () => () => previews.forEach((preview) => URL.revokeObjectURL(preview.url)),
     [previews],
+  );
+
+  const stopCamera = useCallback(() => {
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    setCameraStream(null);
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError("Trình duyệt không hỗ trợ truy cập camera.");
+      return;
+    }
+
+    setCameraError(null);
+    try {
+      stopCamera();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "user",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+      setCameraStream(stream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+    } catch {
+      setCameraError("Không mở được camera. Hãy kiểm tra quyền truy cập hoặc thiết bị camera.");
+      stopCamera();
+    }
+  }, [stopCamera]);
+
+  const captureFrame = useCallback(async () => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (!video || !canvas || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
+      setCameraError("Camera chưa sẵn sàng để chụp ảnh.");
+      return;
+    }
+
+    if (files.length >= MAX_FILES) {
+      setCameraError(`Chỉ được chọn tối đa ${MAX_FILES} ảnh cho một lần enrollment.`);
+      return;
+    }
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      setCameraError("Không thể tạo ảnh từ camera.");
+      return;
+    }
+
+    context.save();
+    context.translate(canvas.width, 0);
+    context.scale(-1, 1);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    context.restore();
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", 0.92),
+    );
+    if (!blob) {
+      setCameraError("Không thể tạo ảnh JPEG từ camera.");
+      return;
+    }
+
+    const file = new File([blob], `camera-capture-${formatTimestamp(new Date())}.jpg`, {
+      type: "image/jpeg",
+    });
+    setFiles((prev) => [...prev, file].slice(0, MAX_FILES));
+    setCameraError(null);
+    notifications.show({
+      color: "teal",
+      message: "Đã chụp ảnh từ camera.",
+    });
+  }, [files.length]);
+
+  const handleModeChange = useCallback(
+    (value: string) => {
+      const nextMode = value as EnrollMode;
+      if (nextMode !== "camera") {
+        stopCamera();
+      }
+      setMode(nextMode);
+    },
+    [stopCamera],
+  );
+
+  useEffect(
+    () => () => {
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+    },
+    [],
   );
 
   const { data: jobStatus } = useQuery({
@@ -71,6 +189,7 @@ export default function EnrollPage() {
     mutationFn: () => createEnrollment(Number(id), files),
     onSuccess(data) {
       setJobId(data.job_id);
+      stopCamera();
       notifications.show({
         color: "blue",
         message: `Đã upload ${data.uploaded_count} ảnh. Đang xử lý embedding...`,
@@ -133,42 +252,140 @@ export default function EnrollPage() {
         >
           <Stack gap="lg">
             <Text size="sm" c="var(--text-secondary)">
-              Upload 1-5 ảnh chân dung rõ nét (JPEG/PNG, tối đa 5MB/ảnh). Ảnh tốt nhất: mặt
+              Chọn 1-5 ảnh chân dung rõ nét hoặc chụp trực tiếp bằng camera. Ảnh tốt nhất: mặt
               thẳng, đủ ánh sáng, chỉ một người trong khung.
             </Text>
 
-            <Dropzone
-              onDrop={(dropped) => setFiles((prev) => [...prev, ...dropped].slice(0, MAX_FILES))}
-              onReject={() =>
-                notifications.show({
-                  color: "red",
-                  message: "File không hợp lệ. Chỉ nhận JPEG/PNG, tối đa 5MB/ảnh.",
-                })
-              }
-              maxSize={MAX_SIZE_BYTES}
-              accept={IMAGE_MIME_TYPE}
-              maxFiles={Math.max(MAX_FILES - files.length, 0)}
-              disabled={files.length >= MAX_FILES}
+            <SegmentedControl
+              value={mode}
+              onChange={handleModeChange}
+              data={[
+                { label: "Upload ảnh", value: "upload" },
+                { label: "Camera", value: "camera" },
+              ]}
               radius="xl"
-              p="xl"
-              style={{
-                border: "1px dashed rgba(124,92,255,0.45)",
-                background: "rgba(124,92,255,0.045)",
-                boxShadow: files.length ? "0 0 34px rgba(124,92,255,0.1)" : "none",
-              }}
-            >
-              <Stack align="center" gap="sm" py="lg" style={{ pointerEvents: "none" }}>
-                <ThemeIcon size={50} radius={16} variant="light" color="brand">
-                  <IconUpload size={26} stroke={1.7} />
-                </ThemeIcon>
-                <Text size="sm" fw={700}>
-                  Kéo thả ảnh vào đây, hoặc click để chọn
-                </Text>
-                <Text size="xs" c="var(--text-muted)">
-                  {files.length}/{MAX_FILES} ảnh đã chọn - JPEG/PNG - tối đa 5MB/ảnh
-                </Text>
+              fullWidth
+            />
+
+            {mode === "upload" && (
+              <Dropzone
+                onDrop={(dropped) => setFiles((prev) => [...prev, ...dropped].slice(0, MAX_FILES))}
+                onReject={() =>
+                  notifications.show({
+                    color: "red",
+                    message: "File không hợp lệ. Chỉ nhận JPEG/PNG, tối đa 5MB/ảnh.",
+                  })
+                }
+                maxSize={MAX_SIZE_BYTES}
+                accept={IMAGE_MIME_TYPE}
+                maxFiles={Math.max(MAX_FILES - files.length, 0)}
+                disabled={files.length >= MAX_FILES}
+                radius="xl"
+                p="xl"
+                style={{
+                  border: "1px dashed rgba(124,92,255,0.45)",
+                  background: "rgba(124,92,255,0.045)",
+                  boxShadow: files.length ? "0 0 34px rgba(124,92,255,0.1)" : "none",
+                }}
+              >
+                <Stack align="center" gap="sm" py="lg" style={{ pointerEvents: "none" }}>
+                  <ThemeIcon size={50} radius={16} variant="light" color="brand">
+                    <IconUpload size={26} stroke={1.7} />
+                  </ThemeIcon>
+                  <Text size="sm" fw={700}>
+                    Kéo thả ảnh vào đây, hoặc click để chọn
+                  </Text>
+                  <Text size="xs" c="var(--text-muted)">
+                    {files.length}/{MAX_FILES} ảnh đã chọn - JPEG/PNG - tối đa 5MB/ảnh
+                  </Text>
+                </Stack>
+              </Dropzone>
+            )}
+
+            {mode === "camera" && (
+              <Stack gap="md">
+                <Box
+                  style={{
+                    position: "relative",
+                    overflow: "hidden",
+                    aspectRatio: "16 / 10",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: 18,
+                    background: "rgba(255,255,255,0.025)",
+                  }}
+                >
+                  <video
+                    ref={videoRef}
+                    muted
+                    playsInline
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      display: cameraStream ? "block" : "none",
+                      objectFit: "cover",
+                      transform: "scaleX(-1)",
+                    }}
+                  />
+                  {!cameraStream && (
+                    <Stack
+                      align="center"
+                      justify="center"
+                      gap="sm"
+                      h="100%"
+                      p="xl"
+                      ta="center"
+                    >
+                      <ThemeIcon size={54} radius={18} variant="light" color="brand">
+                        <IconCamera size={28} stroke={1.7} />
+                      </ThemeIcon>
+                      <Text fw={700}>Camera chưa bật</Text>
+                      <Text size="sm" c="var(--text-muted)" maw={360}>
+                        Bật camera để chụp ảnh chân dung và đưa ảnh vào danh sách enrollment.
+                      </Text>
+                    </Stack>
+                  )}
+                </Box>
+                <canvas ref={canvasRef} style={{ display: "none" }} />
+
+                {cameraError && (
+                  <Alert color="red" variant="light" title="Camera không sẵn sàng">
+                    {cameraError}
+                  </Alert>
+                )}
+
+                <Group justify="space-between" align="center">
+                  <Text size="xs" c="var(--text-muted)">
+                    {files.length}/{MAX_FILES} ảnh đã chọn
+                  </Text>
+                  <Group gap="sm">
+                    {cameraStream ? (
+                      <Button
+                        variant="default"
+                        leftSection={<IconCameraOff size={17} />}
+                        onClick={stopCamera}
+                      >
+                        Tắt camera
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="default"
+                        leftSection={<IconCamera size={17} />}
+                        onClick={startCamera}
+                      >
+                        Bật camera
+                      </Button>
+                    )}
+                    <Button
+                      leftSection={<IconPhoto size={17} />}
+                      disabled={!cameraStream || files.length >= MAX_FILES}
+                      onClick={() => void captureFrame()}
+                    >
+                      Chụp ảnh
+                    </Button>
+                  </Group>
+                </Group>
               </Stack>
-            </Dropzone>
+            )}
 
             {previews.length > 0 && (
               <Stack gap="sm">
@@ -317,4 +534,17 @@ export default function EnrollPage() {
       )}
     </Stack>
   );
+}
+
+function formatTimestamp(date: Date) {
+  const pad = (value: number) => value.toString().padStart(2, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    "-",
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join("");
 }
