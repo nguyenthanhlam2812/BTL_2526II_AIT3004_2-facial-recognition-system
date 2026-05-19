@@ -111,6 +111,9 @@ export default function KioskPage() {
   }, []);
 
   useEffect(() => {
+    // Only run the probe loop while we are online AND we believe the server
+    // is down. The condition reads "early return when not(online && unavailable)"
+    // — De Morgan's law applied to the two boolean flags, NOT a bug.
     if (!isOnline || !serverUnavailable) {
       return;
     }
@@ -405,6 +408,7 @@ export default function KioskPage() {
           ) : (
             <video
               ref={videoRef}
+              aria-label="Kiosk camera preview"
               autoPlay
               muted
               playsInline

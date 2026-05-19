@@ -15,6 +15,14 @@ export type FaceBbox = {
   width: number;
   height: number;
   score: number;
+  keypoints: FaceKeypoint[];
+};
+
+export type FaceKeypoint = {
+  x: number;
+  y: number;
+  label?: string;
+  score?: number;
 };
 
 export type FaceDetectorState = {
@@ -67,7 +75,7 @@ export function useFaceDetector(
           setState((prev) => ({
             ...prev,
             loading: false,
-            error: "Face detector assets could not be loaded.",
+            error: "Không tải được tài nguyên nhận diện khuôn mặt.",
           }));
         }
       }
@@ -127,22 +135,34 @@ export function useFaceDetector(
         return;
       }
 
-      const scaleX = displayWidth / videoWidth;
-      const scaleY = displayHeight / videoHeight;
+      const scale = Math.max(displayWidth / videoWidth, displayHeight / videoHeight);
+      const renderedWidth = videoWidth * scale;
+      const renderedHeight = videoHeight * scale;
+      const offsetX = (displayWidth - renderedWidth) / 2;
+      const offsetY = (displayHeight - renderedHeight) / 2;
 
       const boxes: FaceBbox[] = detections
         .filter((d) => d.boundingBox)
         .map((d) => {
           const bb = d.boundingBox!;
-          const rawX = bb.originX * scaleX;
-          const rawW = bb.width * scaleX;
+          const rawX = bb.originX * scale + offsetX;
+          const rawW = bb.width * scale;
 
           return {
             x: displayWidth - rawX - rawW,
-            y: bb.originY * scaleY,
+            y: bb.originY * scale + offsetY,
             width: rawW,
-            height: bb.height * scaleY,
+            height: bb.height * scale,
             score: d.categories?.[0]?.score ?? 0,
+            keypoints: (d.keypoints ?? []).map((keypoint) => {
+              const x = keypoint.x * renderedWidth + offsetX;
+              return {
+                x: displayWidth - x,
+                y: keypoint.y * renderedHeight + offsetY,
+                label: keypoint.label,
+                score: keypoint.score,
+              };
+            }),
           };
         });
 

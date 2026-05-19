@@ -141,6 +141,30 @@ body {
   pointer-events: none;
 }
 
+.enroll-pose-cue {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 18px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(10, 10, 15, 0.74);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  pointer-events: none;
+}
+
+.enroll-pose-cue.ready {
+  border-color: rgba(34, 211, 166, 0.36);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.34), 0 0 24px rgba(34, 211, 166, 0.14);
+}
+
 .scan-frame {
   position: absolute;
   inset: 18px;

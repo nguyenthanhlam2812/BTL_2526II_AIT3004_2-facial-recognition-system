@@ -404,15 +404,15 @@ export default function UsersPage() {
         centered
       >
         <form
-          onSubmit={editForm.onSubmit((values) =>
-            editingUser &&
+          onSubmit={editForm.onSubmit((values) => {
+            if (!editingUser) return;
             updateMutation.mutate({
               id: editingUser.id,
               username: values.username,
               role: values.role,
               is_active: values.is_active,
-            }),
-          )}
+            });
+          })}
         >
           <Stack gap="md">
             <TextInput label="Tên đăng nhập" {...editForm.getInputProps("username")} />
@@ -445,9 +445,10 @@ export default function UsersPage() {
         centered
       >
         <form
-          onSubmit={resetForm.onSubmit((values) =>
-            resetUser && resetMutation.mutate({ id: resetUser.id, password: values.password }),
-          )}
+          onSubmit={resetForm.onSubmit((values) => {
+            if (!resetUser) return;
+            resetMutation.mutate({ id: resetUser.id, password: values.password });
+          })}
         >
           <Stack gap="md">
             <PasswordInput label="Mật khẩu mới" {...resetForm.getInputProps("password")} />

@@ -156,6 +156,8 @@ export default function AdminLayout() {
               return (
                 <UnstyledButton
                   key={item.path}
+                  aria-label={item.label}
+                  aria-current={active ? "page" : undefined}
                   onClick={() =>
                     item.external ? window.open(item.path, "_blank") : navigate(item.path)
                   }

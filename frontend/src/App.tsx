@@ -10,13 +10,21 @@ import ReportsPage from "@/routes/admin/ReportsPage";
 import SystemPage from "@/routes/admin/SystemPage";
 import UsersPage from "@/routes/admin/UsersPage";
 import KioskPage from "@/routes/kiosk/KioskPage";
+import ErrorBoundary from "@/shared/ui/ErrorBoundary";
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
 
-      <Route path="/admin" element={<AdminLayout />}>
+      <Route
+        path="/admin"
+        element={
+          <ErrorBoundary>
+            <AdminLayout />
+          </ErrorBoundary>
+        }
+      >
         <Route index element={<Navigate to="dashboard" replace />} />
 
         {/* Dashboard */}
@@ -38,7 +46,14 @@ export default function App() {
       </Route>
 
       {/* Kiosk — standalone, không cần auth */}
-      <Route path="/kiosk" element={<KioskPage />} />
+      <Route
+        path="/kiosk"
+        element={
+          <ErrorBoundary>
+            <KioskPage />
+          </ErrorBoundary>
+        }
+      />
 
       <Route path="/" element={<Navigate to="/admin/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/login" replace />} />

@@ -15,8 +15,9 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Linting — bật strict: true ở tuần 7 */
-    "strict": false,
+    /* Linting */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
     "noFallthroughCasesInSwitch": true,
 
     /* Path alias */

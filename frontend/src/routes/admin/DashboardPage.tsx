@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import "dayjs/locale/vi";
-import { AreaChart, DonutChart } from "@mantine/charts";
 import {
   Anchor,
   Box,
@@ -35,6 +34,17 @@ dayjs.locale("vi");
 
 const FEED_EVENT_LIMIT = 100;
 
+type TrendPoint = {
+  label: string;
+  value: number;
+};
+
+type DonutSegment = {
+  name: string;
+  value: number;
+  color: string;
+};
+
 function statusMeta(status: AttendanceStatus): { label: string; dot: GlowDotStatus } {
   switch (status) {
     case "recorded":
@@ -54,6 +64,146 @@ function actionLabel(action: AttendanceEvent["action_type"]) {
 
 function eventTimestamp(event: AttendanceEvent) {
   return event.captured_at ?? event.created_at;
+}
+
+function TrendChart({ data }: { data: TrendPoint[] }) {
+  const width = 640;
+  const height = 270;
+  const padding = { top: 18, right: 18, bottom: 34, left: 38 };
+  const innerWidth = width - padding.left - padding.right;
+  const innerHeight = height - padding.top - padding.bottom;
+  const points = data.length ? data : [{ label: "", value: 0 }];
+  const maxValue = Math.max(1, ...points.map((point) => point.value));
+  const baselineY = padding.top + innerHeight;
+  const xFor = (index: number) =>
+    padding.left + (points.length === 1 ? innerWidth / 2 : (index * innerWidth) / (points.length - 1));
+  const yFor = (value: number) => baselineY - (value / maxValue) * innerHeight;
+  const coordinates = points.map((point, index) => ({
+    ...point,
+    x: xFor(index),
+    y: yFor(point.value),
+  }));
+  const linePath = coordinates.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+  const firstCoordinate = coordinates[0] ?? { x: padding.left, y: baselineY };
+  const lastCoordinate = coordinates[coordinates.length - 1] ?? firstCoordinate;
+  const areaPath = `${linePath} L ${lastCoordinate.x} ${baselineY} L ${firstCoordinate.x} ${baselineY} Z`;
+  const labelEvery = points.length > 10 ? Math.ceil(points.length / 6) : 1;
+  const gridLines = Array.from({ length: 5 }, (_, index) => {
+    const y = padding.top + (index * innerHeight) / 4;
+    const value = Math.round(maxValue - (index * maxValue) / 4);
+    return { y, value };
+  });
+
+  return (
+    <Box style={{ width: "100%", minWidth: 0, height }}>
+      <svg
+        aria-label="Daily check-in trend"
+        role="img"
+        viewBox={`0 0 ${width} ${height}`}
+        width="100%"
+        height="100%"
+      >
+        <defs>
+          <linearGradient id="dashboardTrendFill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="var(--accent-primary)" stopOpacity="0.36" />
+            <stop offset="100%" stopColor="var(--accent-primary)" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        {gridLines.map((line) => (
+          <g key={line.y}>
+            <line
+              x1={padding.left}
+              x2={width - padding.right}
+              y1={line.y}
+              y2={line.y}
+              stroke="var(--border-strong)"
+              strokeDasharray="5 5"
+            />
+            <text x={10} y={line.y + 4} fill="var(--text-muted)" fontSize="11">
+              {line.value}
+            </text>
+          </g>
+        ))}
+        <path d={areaPath} fill="url(#dashboardTrendFill)" />
+        <path d={linePath} fill="none" stroke="var(--accent-primary)" strokeWidth="3" />
+        {coordinates.map((point, index) => (
+          <g key={`${point.label}-${index}`}>
+            <circle cx={point.x} cy={point.y} r="4" fill="var(--accent-primary-2)" />
+            {(index % labelEvery === 0 || index === coordinates.length - 1) && (
+              <text
+                x={point.x}
+                y={height - 10}
+                fill="var(--text-muted)"
+                fontSize="11"
+                textAnchor="middle"
+              >
+                {point.label}
+              </text>
+            )}
+          </g>
+        ))}
+      </svg>
+    </Box>
+  );
+}
+
+function StatusDonut({ data, total }: { data: DonutSegment[]; total: number }) {
+  const size = 220;
+  const center = size / 2;
+  const radius = 76;
+  const strokeWidth = 26;
+  const circumference = 2 * Math.PI * radius;
+  const sum = Math.max(1, data.reduce((acc, item) => acc + item.value, 0));
+  const fallbackColors = ["var(--success)", "var(--warning)", "var(--danger)", "var(--border-strong)"];
+  const segments = data.map((segment, index) => {
+    const previousLength = data
+      .slice(0, index)
+      .reduce((acc, item) => acc + (item.value / sum) * circumference, 0);
+    const length = (segment.value / sum) * circumference;
+    return {
+      ...segment,
+      length,
+      dashOffset: -previousLength,
+      stroke: segment.color.includes(".") ? (fallbackColors[index] ?? fallbackColors[3]) : segment.color,
+    };
+  });
+
+  return (
+    <Box style={{ width: "100%", minWidth: 0, height: 240, display: "grid", placeItems: "center" }}>
+      <svg aria-label="Today attendance status" role="img" viewBox={`0 0 ${size} ${size}`} width={220} height={220}>
+        <circle
+          cx={center}
+          cy={center}
+          r={radius}
+          fill="none"
+          stroke="var(--border-strong)"
+          strokeWidth={strokeWidth}
+          opacity="0.55"
+        />
+        {segments.map((segment, index) => (
+          <circle
+            key={`${segment.name}-${index}`}
+            cx={center}
+            cy={center}
+            r={radius}
+            fill="none"
+            stroke={segment.stroke}
+            strokeWidth={strokeWidth}
+            strokeDasharray={`${segment.length} ${circumference - segment.length}`}
+            strokeDashoffset={segment.dashOffset}
+            strokeLinecap="round"
+            transform={`rotate(-90 ${center} ${center})`}
+          />
+        ))}
+        <text x={center} y={center - 4} textAnchor="middle" fill="var(--text-primary)" fontSize="34" fontWeight="800">
+          {total}
+        </text>
+        <text x={center} y={center + 24} textAnchor="middle" fill="var(--text-muted)" fontSize="12">
+          total
+        </text>
+      </svg>
+    </Box>
+  );
 }
 
 export default function DashboardPage() {
@@ -77,17 +227,17 @@ export default function DashboardPage() {
   const totalEmployees = summary?.total_employees ?? 0;
   const stats = summary?.today ?? { present: 0, late: 0, absent: 0 };
 
-  const chartData = useMemo(() => {
+  const chartData = useMemo<TrendPoint[]>(() => {
     const days = Number(range);
     return (
       summary?.trend.map((point) => ({
-        date: dayjs(point.date).format(days > 7 ? "DD/MM" : "ddd"),
-        "Check-in": point.check_in_count,
+        label: dayjs(point.date).format(days > 7 ? "DD/MM" : "ddd"),
+        value: point.check_in_count,
       })) ?? []
     );
   }, [range, summary?.trend]);
 
-  const donutData =
+  const donutData: DonutSegment[] =
     totalEmployees > 0 || stats.present > 0 || stats.late > 0
       ? [
           { name: "Có mặt", value: stats.present, color: "teal.5" },
@@ -149,6 +299,7 @@ export default function DashboardPage() {
           style={{
             background: "var(--bg-card)",
             borderColor: "var(--border-subtle)",
+            minWidth: 0,
           }}
         >
           <Stack gap="lg">
@@ -161,23 +312,18 @@ export default function DashboardPage() {
               </Stack>
               <IconCalendarStats size={22} color="var(--accent-primary-2)" />
             </Group>
-            <AreaChart
-              h={270}
-              data={chartData}
-              dataKey="date"
-              series={[{ name: "Check-in", color: "brand.4" }]}
-              curveType="monotone"
-              withGradient
-              withLegend={false}
-              gridAxis="xy"
-            />
+            <TrendChart data={chartData} />
           </Stack>
         </Paper>
 
         <Paper
           withBorder
           p="lg"
-          style={{ background: "var(--bg-card)", borderColor: "var(--border-subtle)" }}
+          style={{
+            background: "var(--bg-card)",
+            borderColor: "var(--border-subtle)",
+            minWidth: 0,
+          }}
         >
           <Stack gap="lg">
             <Stack gap={2}>
@@ -186,7 +332,7 @@ export default function DashboardPage() {
                 Theo report aggregate của backend
               </Text>
             </Stack>
-            <DonutChart h={240} data={donutData} thickness={26} paddingAngle={3} />
+            <StatusDonut data={donutData} total={totalEmployees} />
             <Stack gap="xs">
               <GlowDot status="success" label={`Có mặt: ${stats.present}`} />
               <GlowDot status="warning" label={`Đi muộn: ${stats.late}`} />
