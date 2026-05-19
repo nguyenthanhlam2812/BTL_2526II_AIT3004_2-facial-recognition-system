@@ -42,6 +42,31 @@ def test_post_attendance_frame_returns_400_for_empty_file(client):
     assert response.json()["detail"] == "Image file is empty."
 
 
+def test_post_attendance_frame_rejects_unsupported_content_type(client):
+    response = client.post(
+        "/api/attendance/frame",
+        files={"image": ("notes.txt", b"hello world", "text/plain")},
+        data={"action_type": "check_in"},
+        headers=KIOSK_HEADERS,
+    )
+
+    assert response.status_code == 415
+    assert "Unsupported image type" in response.json()["detail"]
+
+
+def test_post_attendance_frame_rejects_oversize_image(client):
+    oversized = b"\xff\xd8\xff\xe0" + b"\x00" * (5 * 1024 * 1024 + 1) + b"\xff\xd9"
+    response = client.post(
+        "/api/attendance/frame",
+        files={"image": ("big.jpg", oversized, "image/jpeg")},
+        data={"action_type": "check_in"},
+        headers=KIOSK_HEADERS,
+    )
+
+    assert response.status_code == 413
+    assert "too large" in response.json()["detail"].lower()
+
+
 def test_post_attendance_frame_maps_infrastructure_error_to_503(
     client,
     monkeypatch,

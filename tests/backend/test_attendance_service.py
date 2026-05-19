@@ -879,6 +879,191 @@ def test_export_attendance_events_csv_rejects_results_over_cap(db_session, monke
         )
 
 
+def test_recognize_attendance_frame_skips_inactive_employee(db_session, monkeypatch):
+    inactive_employee = Employee(
+        employee_code="E-INACTIVE",
+        full_name="Inactive Person",
+        department="IT",
+        position="Engineer",
+        status="inactive",
+    )
+    db_session.add(inactive_employee)
+    db_session.commit()
+    db_session.refresh(inactive_employee)
+
+    monkeypatch.setattr(
+        attendance_service,
+        "analyze_image_bytes",
+        lambda _: {
+            "status": "success",
+            "faces_detected": 1,
+            "error_message": None,
+            "embedding": [0.1] * 512,
+        },
+    )
+    monkeypatch.setattr(
+        attendance_service,
+        "search_face_embeddings",
+        lambda **_: [
+            FaceSearchResult(
+                employee_id=inactive_employee.id,
+                score=0.95,
+                payload={},
+                point_id="point-1",
+            )
+        ],
+    )
+
+    response = attendance_service.recognize_attendance_frame(
+        db_session,
+        image_bytes=b"fake-image-bytes",
+        action_type="check_in",
+        captured_at=None,
+        camera_id="cam-01",
+    )
+
+    assert response.matched is False
+    assert response.attendance_status == "unknown_face"
+    assert response.message == "Face not recognized."
+    assert response.employee is None
+    assert response.event_id is None
+    # Policy: inactive-only match must not create any event (recorded or unknown).
+    total_count = db_session.scalar(select(func.count()).select_from(AttendanceEvent))
+    assert total_count == 0
+
+
+def test_recognize_attendance_frame_matches_active_after_inactive_in_results(
+    db_session,
+    monkeypatch,
+):
+    inactive_employee = Employee(
+        employee_code="E-INACTIVE-FIRST",
+        full_name="Inactive Top Hit",
+        department="IT",
+        position="Engineer",
+        status="inactive",
+    )
+    active_employee = Employee(
+        employee_code="E-ACTIVE-SECOND",
+        full_name="Active Second Hit",
+        department="IT",
+        position="Engineer",
+        status="active",
+    )
+    db_session.add_all([inactive_employee, active_employee])
+    db_session.commit()
+    db_session.refresh(inactive_employee)
+    db_session.refresh(active_employee)
+
+    monkeypatch.setattr(
+        attendance_service,
+        "analyze_image_bytes",
+        lambda _: {
+            "status": "success",
+            "faces_detected": 1,
+            "error_message": None,
+            "embedding": [0.1] * 512,
+        },
+    )
+    monkeypatch.setattr(
+        attendance_service,
+        "search_face_embeddings",
+        lambda **_: [
+            FaceSearchResult(
+                employee_id=inactive_employee.id,
+                score=0.97,
+                payload={},
+                point_id="point-1",
+            ),
+            FaceSearchResult(
+                employee_id=active_employee.id,
+                score=0.90,
+                payload={},
+                point_id="point-2",
+            ),
+        ],
+    )
+
+    response = attendance_service.recognize_attendance_frame(
+        db_session,
+        image_bytes=b"fake-image-bytes",
+        action_type="check_in",
+        captured_at=None,
+        camera_id="cam-01",
+    )
+
+    assert response.matched is True
+    assert response.attendance_status == "recorded"
+    assert response.employee is not None
+    assert response.employee.id == active_employee.id
+    assert response.score == 0.90
+    recorded_count = db_session.scalar(
+        select(func.count())
+        .select_from(AttendanceEvent)
+        .where(AttendanceEvent.attendance_status == "recorded")
+    )
+    assert recorded_count == 1
+
+
+def test_recognize_attendance_frame_inactive_only_creates_no_event(
+    db_session,
+    monkeypatch,
+):
+    inactive_employee = Employee(
+        employee_code="E-INACTIVE-ONLY",
+        full_name="Inactive Only",
+        department="IT",
+        position="Engineer",
+        status="inactive",
+    )
+    db_session.add(inactive_employee)
+    db_session.commit()
+    db_session.refresh(inactive_employee)
+
+    monkeypatch.setattr(
+        attendance_service,
+        "analyze_image_bytes",
+        lambda _: {
+            "status": "success",
+            "faces_detected": 1,
+            "error_message": None,
+            "embedding": [0.1] * 512,
+        },
+    )
+    monkeypatch.setattr(
+        attendance_service,
+        "search_face_embeddings",
+        lambda **_: [
+            FaceSearchResult(
+                employee_id=inactive_employee.id,
+                score=0.95,
+                payload={},
+                point_id="point-1",
+            ),
+            FaceSearchResult(
+                employee_id=inactive_employee.id,
+                score=0.92,
+                payload={},
+                point_id="point-2",
+            ),
+        ],
+    )
+
+    response = attendance_service.recognize_attendance_frame(
+        db_session,
+        image_bytes=b"fake-image-bytes",
+        action_type="check_in",
+        captured_at=None,
+        camera_id="cam-01",
+        record_unmatched=True,
+    )
+
+    assert response.matched is False
+    assert response.event_id is None
+    total_count = db_session.scalar(select(func.count()).select_from(AttendanceEvent))
+    assert total_count == 0
+
+
 def test_list_attendance_events_serializes_business_local_wall_time(db_session):
     employee = Employee(
         employee_code="E901",

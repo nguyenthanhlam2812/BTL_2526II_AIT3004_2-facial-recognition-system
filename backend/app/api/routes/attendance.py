@@ -15,6 +15,7 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import require_admin, require_kiosk_token, require_operator
+from backend.app.api.validators import read_validated_image
 from backend.app.db.session import get_db
 from backend.app.models.user import User
 from backend.app.rate_limit import limiter
@@ -57,12 +58,7 @@ def recognize_attendance_frame(
     _: None = Depends(require_kiosk_token),
     db: Session = Depends(get_db),
 ) -> AttendanceFrameResponse:
-    image_bytes = image.file.read()
-    if not image_bytes:
-        raise HTTPException(
-            status_code=http_status.HTTP_400_BAD_REQUEST,
-            detail="Image file is empty.",
-        )
+    image_bytes = read_validated_image(image)
 
     try:
         return recognize_attendance_frame_service(

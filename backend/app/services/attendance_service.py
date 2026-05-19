@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import csv
 import inspect
-from dataclasses import dataclass
 from io import StringIO
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
-from threading import Lock
 from typing import Literal
 
+import structlog
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -29,6 +28,7 @@ from backend.app.schemas.attendance import (
     AttendanceFrameResponse,
     AttendanceStatus,
 )
+from backend.app.services import camera_gate_service
 from backend.app.services.face_analyzer import analyze_image_bytes
 from backend.app.services.qdrant_service import VectorStoreError, search_face_embeddings
 from backend.app.services.system_settings_service import get_effective_runtime_settings
@@ -51,15 +51,7 @@ NO_FACE_MESSAGE = "No face detected."
 MAX_EXPORT_EVENTS = 50_000
 
 
-@dataclass
-class CameraMatchGate:
-    employee_id: int
-    event_id: int
-    updated_at: datetime
-
-
-_camera_match_gates: dict[tuple[str, AttendanceActionType], CameraMatchGate] = {}
-_camera_match_gates_lock = Lock()
+logger = structlog.get_logger(__name__)
 
 
 def recognize_attendance_frame(
@@ -71,6 +63,23 @@ def recognize_attendance_frame(
     camera_id: str | None,
     record_unmatched: bool = True,
 ) -> AttendanceFrameResponse:
+    """Recognise a single kiosk frame and record the attendance event if any.
+
+    Pipeline:
+        1. Run InsightFace detection + embedding extraction on the bytes.
+        2. Query Qdrant for the top ``FACE_SEARCH_LIMIT`` candidates.
+        3. Walk candidates in descending score and pick the first ACTIVE employee
+           whose score >= the runtime threshold.
+        4. Apply the dedupe gates (per-camera 5 min, per-employee 10 s) before
+           writing a new ``AttendanceEvent``.
+
+    Policy — inactive-employee silently dropped:
+        If the only above-threshold match belongs to an inactive employee we
+        intentionally DO NOT record any event (matched or unmatched). The caller
+        receives an ``unknown_face`` response with ``record_event=False`` so the
+        UI cannot enumerate disabled accounts via score signals. See the
+        ``inactive_match_seen`` branch below.
+    """
     request_received_at = datetime.now(timezone.utc)
     normalized_captured_at = _normalize_utc_naive(captured_at)
     runtime_settings = get_effective_runtime_settings(db)
@@ -131,26 +140,49 @@ def recognize_attendance_frame(
         )
 
     threshold = runtime_settings.attendance_threshold
-    for search_result in search_results:
-        if search_result.employee_id is None:
+    inactive_match_seen = False
+    employee: Employee | None = None
+    search_result = None
+
+    for candidate_result in search_results:
+        if candidate_result.employee_id is None:
             continue
 
-        if search_result.score < threshold:
+        if candidate_result.score < threshold:
+            # Qdrant returns results in descending score order; remaining results
+            # are also below threshold so stop scanning here.
+            break
+
+        candidate = db.get(Employee, candidate_result.employee_id)
+        if candidate is None:
+            continue
+        if candidate.status != "active":
+            inactive_match_seen = True
+            continue
+
+        employee = candidate
+        search_result = candidate_result
+        break
+
+    if employee is None or search_result is None:
+        # No active match. If we passed over an inactive match, policy says to
+        # hide that fact and not record an event at all.
+        if inactive_match_seen:
+            logger.warning(
+                "attendance.inactive_match_skipped",
+                camera_id=camera_id,
+                action_type=str(action_type),
+            )
             return _save_unmatched_event(
                 db,
                 action_type=action_type,
                 attendance_status="unknown_face",
                 message="Face not recognized.",
-                score=search_result.score,
+                score=None,
                 captured_at=normalized_captured_at,
                 camera_id=camera_id,
-                record_event=record_unmatched,
+                record_event=False,
             )
-
-        employee = db.get(Employee, search_result.employee_id)
-        if employee is not None:
-            break
-    else:
         return _save_unmatched_event(
             db,
             action_type=action_type,
@@ -212,6 +244,14 @@ def recognize_attendance_frame(
         employee_id=employee.id,
         event_id=event.id,
         updated_at=request_received_at,
+    )
+    logger.info(
+        "attendance.match",
+        employee_id=employee.id,
+        event_id=event.id,
+        score=float(search_result.score),
+        camera_id=camera_id,
+        action_type=str(action_type),
     )
 
     return AttendanceFrameResponse(
@@ -631,15 +671,13 @@ def _list_report_employees(
     employee_id: int | None,
     department: str | None,
 ) -> list[Employee]:
-    filters = []
+    filters: list = [Employee.status == "active"]
     if employee_id is not None:
         filters.append(Employee.id == employee_id)
     if department and department.strip():
         filters.append(func.lower(Employee.department) == department.strip().lower())
 
-    stmt = select(Employee).order_by(Employee.id.asc())
-    if filters:
-        stmt = stmt.where(*filters)
+    stmt = select(Employee).where(*filters).order_by(Employee.id.asc())
     return list(db.scalars(stmt).all())
 
 
@@ -710,28 +748,26 @@ def _find_camera_match_gate_event_id(
     employee_id: int,
     request_received_at: datetime,
 ) -> int | None:
-    key = _camera_match_gate_key(camera_id, action_type)
-    if key is None:
+    normalized = _normalize_camera_id(camera_id)
+    if normalized is None:
         return None
 
-    normalized_request_received_at = _normalize_utc_naive(request_received_at)
-    with _camera_match_gates_lock:
-        gate = _camera_match_gates.get(key)
-        if gate is None:
-            return None
+    gate = camera_gate_service.get_gate(normalized, str(action_type))
+    if gate is None or gate.employee_id != employee_id:
+        return None
 
-        if (
-            _normalize_utc_naive(gate.updated_at) + CAMERA_MATCH_GATE_TTL
-            < normalized_request_received_at
-        ):
-            _camera_match_gates.pop(key, None)
-            return None
-
-        if gate.employee_id != employee_id:
-            return None
-
-        gate.updated_at = request_received_at
-        return gate.event_id
+    # Slide the dedupe window forward on a confirmed re-scan so a continuous
+    # presence at the kiosk does not get re-recorded after 5 minutes.
+    camera_gate_service.set_gate(
+        normalized,
+        str(action_type),
+        record=camera_gate_service.CameraGateRecord(
+            employee_id=gate.employee_id,
+            event_id=gate.event_id,
+            updated_at=request_received_at,
+        ),
+    )
+    return gate.event_id
 
 
 def _set_camera_match_gate(
@@ -742,16 +778,18 @@ def _set_camera_match_gate(
     event_id: int,
     updated_at: datetime,
 ) -> None:
-    key = _camera_match_gate_key(camera_id, action_type)
-    if key is None:
+    normalized = _normalize_camera_id(camera_id)
+    if normalized is None:
         return
-
-    with _camera_match_gates_lock:
-        _camera_match_gates[key] = CameraMatchGate(
+    camera_gate_service.set_gate(
+        normalized,
+        str(action_type),
+        record=camera_gate_service.CameraGateRecord(
             employee_id=employee_id,
             event_id=event_id,
             updated_at=updated_at,
-        )
+        ),
+    )
 
 
 def _clear_camera_match_gate(
@@ -759,39 +797,23 @@ def _clear_camera_match_gate(
     camera_id: str | None,
     action_type: AttendanceActionType,
 ) -> None:
-    key = _camera_match_gate_key(camera_id, action_type)
-    if key is None:
+    normalized = _normalize_camera_id(camera_id)
+    if normalized is None:
         return
-
-    with _camera_match_gates_lock:
-        _camera_match_gates.pop(key, None)
+    camera_gate_service.clear_gate(normalized, str(action_type))
 
 
 def _clear_all_camera_match_gates() -> None:
-    with _camera_match_gates_lock:
-        _camera_match_gates.clear()
+    camera_gate_service.clear_all_gates()
 
 
 def _clear_camera_match_gates_for_event_ids(event_ids: set[int]) -> None:
-    if not event_ids:
-        return
-
-    with _camera_match_gates_lock:
-        stale_keys = [
-            key for key, gate in _camera_match_gates.items() if gate.event_id in event_ids
-        ]
-        for key in stale_keys:
-            _camera_match_gates.pop(key, None)
+    camera_gate_service.clear_gates_for_event_ids(event_ids)
 
 
-def _camera_match_gate_key(
-    camera_id: str | None,
-    action_type: AttendanceActionType,
-) -> tuple[str, AttendanceActionType] | None:
-    normalized_camera_id = (camera_id or "").strip()
-    if not normalized_camera_id:
-        return None
-    return normalized_camera_id, action_type
+def _normalize_camera_id(camera_id: str | None) -> str | None:
+    normalized = (camera_id or "").strip()
+    return normalized or None
 
 
 def _build_event_read(db: Session, event: AttendanceEvent) -> AttendanceEventRead:

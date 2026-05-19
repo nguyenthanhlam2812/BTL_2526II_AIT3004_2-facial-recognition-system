@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import os
+
+# Keep rate limiter in-memory for tests so they don't depend on a live Redis.
+os.environ.setdefault("RATE_LIMIT_STORAGE_URI", "memory://")
+
+import fakeredis
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -18,7 +24,7 @@ from backend.app.db.base import Base
 from backend.app.db.session import get_db
 from backend.app.main import app
 from backend.app.models.user import User
-from backend.app.services import attendance_service
+from backend.app.services import attendance_service, camera_gate_service
 
 
 engine = create_engine(
@@ -46,6 +52,10 @@ def clear_settings_cache():
 
 @pytest.fixture()
 def db_session():
+    # Wire a fresh in-memory Redis stub into the camera-gate service for each
+    # test so the dedupe window is deterministic and tests stay isolated.
+    fake = fakeredis.FakeRedis(decode_responses=True)
+    camera_gate_service.reset_client(fake)
     attendance_service._clear_all_camera_match_gates()
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
@@ -55,6 +65,11 @@ def db_session():
     finally:
         db.close()
         attendance_service._clear_all_camera_match_gates()
+        camera_gate_service.reset_client(None)
+        try:
+            fake.flushall()
+        except Exception:
+            pass
 
 
 @pytest.fixture()

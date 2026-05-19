@@ -4,9 +4,13 @@ from functools import lru_cache
 
 import cv2
 import numpy as np
+import structlog
 from insightface.app import FaceAnalysis
 
 from backend.app.config import get_settings
+
+
+logger = structlog.get_logger(__name__)
 
 
 class FaceFilterSettings:
@@ -59,6 +63,7 @@ def analyze_image_bytes(
     image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
 
     if image is None:
+        logger.warning("face.decode_failed")
         return {
             "status": "failed",
             "faces_detected": 0,
@@ -69,6 +74,7 @@ def analyze_image_bytes(
     faces_detected = len(faces)
 
     if faces_detected == 0:
+        logger.info("face.no_face_detected")
         return {
             "status": "failed",
             "faces_detected": 0,
@@ -83,6 +89,7 @@ def analyze_image_bytes(
     ]
 
     if blocking_secondary_faces:
+        logger.info("face.multiple_faces_detected", count=faces_detected)
         return {
             "status": "failed",
             "faces_detected": faces_detected,

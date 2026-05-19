@@ -10,12 +10,14 @@ from slowapi.middleware import SlowAPIMiddleware
 
 from backend.app.api.router import api_router
 from backend.app.config import get_settings, validate_runtime_settings
+from backend.app.logging_config import configure_logging
 from backend.app.rate_limit import limiter
 from backend.app.services.face_analyzer import get_face_app
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    configure_logging(debug=settings.debug)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
