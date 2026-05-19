@@ -1,28 +1,39 @@
+import { useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useMutation } from "@tanstack/react-query";
 import {
   AppShell,
   Avatar,
   Box,
+  Button,
   Divider,
   Group,
   Menu,
+  Modal,
+  PasswordInput,
   Stack,
   Text,
   UnstyledButton,
 } from "@mantine/core";
+import { useForm, isNotEmpty, matchesField } from "@mantine/form";
+import { notifications } from "@mantine/notifications";
 import {
   IconActivityHeartbeat,
   IconCalendarStats,
   IconChevronDown,
   IconClockHour4,
   IconDashboard,
+  IconKey,
   IconLogout,
   IconScan,
   IconSettings,
   IconShieldCheck,
+  IconShieldLock,
   IconUserCog,
   IconUsers,
 } from "@tabler/icons-react";
+import type { AxiosError } from "axios";
+import { changePassword } from "@/shared/api/auth";
 import { useRequireAuth } from "@/shared/hooks/useRequireAuth";
 import { clearToken } from "@/shared/lib/token";
 import GlowDot from "@/shared/ui/GlowDot";
@@ -41,14 +52,63 @@ const navItems: NavItem[] = [
   { label: "Chấm công", path: "/admin/attendance", icon: IconClockHour4 },
   { label: "Báo cáo", path: "/admin/reports", icon: IconCalendarStats },
   { label: "Người dùng", path: "/admin/users", icon: IconUserCog, ownerOnly: true },
-  { label: "Cấu hình", path: "/admin/system", icon: IconSettings },
+  { label: "Cấu hình", path: "/admin/system", icon: IconSettings, ownerOnly: true },
   { label: "Kiosk", path: "/kiosk", icon: IconScan, external: true },
 ];
+
+function getErrorDetail(error: unknown): string {
+  const detail = (error as AxiosError<{ detail?: string }>).response?.data?.detail;
+  return detail ?? "Không kết nối được máy chủ.";
+}
+
+function validateNewPassword(value: string) {
+  if (!value) return "Nhập mật khẩu mới.";
+  if (value !== value.trim()) return "Mật khẩu mới không được bắt đầu hoặc kết thúc bằng khoảng trắng.";
+  if (value.length < 8) return "Mật khẩu mới phải dài ít nhất 8 ký tự.";
+  if (!/[a-z]/i.test(value) || !/\d/.test(value)) {
+    return "Mật khẩu mới cần có ít nhất một chữ cái và một chữ số.";
+  }
+  return null;
+}
 
 export default function AdminLayout() {
   const { user } = useRequireAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+
+  const passwordForm = useForm({
+    initialValues: {
+      current_password: "",
+      new_password: "",
+      confirm_password: "",
+    },
+    validate: {
+      current_password: isNotEmpty("Nhập mật khẩu hiện tại."),
+      new_password: validateNewPassword,
+      confirm_password: matchesField("new_password", "Mật khẩu xác nhận không khớp."),
+    },
+  });
+
+  const changePasswordMutation = useMutation({
+    mutationFn: changePassword,
+    onSuccess(response) {
+      notifications.show({
+        color: "teal",
+        title: "Đã cập nhật mật khẩu",
+        message: response.message,
+      });
+      passwordForm.reset();
+      setPasswordModalOpen(false);
+    },
+    onError(error: unknown) {
+      notifications.show({
+        color: "red",
+        title: "Đổi mật khẩu thất bại",
+        message: getErrorDetail(error),
+      });
+    },
+  });
 
   function handleLogout() {
     clearToken();
@@ -56,7 +116,8 @@ export default function AdminLayout() {
   }
 
   return (
-    <AppShell
+    <>
+      <AppShell
       header={{ height: 64 }}
       navbar={{ width: 240, breakpoint: "sm" }}
       padding={0}
@@ -132,6 +193,12 @@ export default function AdminLayout() {
             </Menu.Target>
             <Menu.Dropdown>
               <Menu.Label>Admin session</Menu.Label>
+              <Menu.Item
+                leftSection={<IconKey size={16} />}
+                onClick={() => setPasswordModalOpen(true)}
+              >
+                Đổi mật khẩu
+              </Menu.Item>
               <Menu.Item leftSection={<IconLogout size={16} />} color="red" onClick={handleLogout}>
                 Đăng xuất
               </Menu.Item>
@@ -211,11 +278,66 @@ export default function AdminLayout() {
         </Stack>
       </AppShell.Navbar>
 
-      <AppShell.Main>
-        <Box p={{ base: "md", md: "xl" }}>
-          <Outlet />
-        </Box>
-      </AppShell.Main>
-    </AppShell>
+        <AppShell.Main>
+          <Box p={{ base: "md", md: "xl" }}>
+            <Outlet />
+          </Box>
+        </AppShell.Main>
+      </AppShell>
+
+      <Modal
+        opened={passwordModalOpen}
+        onClose={() => {
+          setPasswordModalOpen(false);
+          passwordForm.reset();
+        }}
+        title="Đổi mật khẩu"
+        centered
+      >
+        <form
+          onSubmit={passwordForm.onSubmit((values) =>
+            changePasswordMutation.mutate({
+              current_password: values.current_password,
+              new_password: values.new_password,
+            }),
+          )}
+        >
+          <Stack gap="md">
+            <PasswordInput
+              label="Mật khẩu hiện tại"
+              autoComplete="current-password"
+              leftSection={<IconKey size={16} />}
+              {...passwordForm.getInputProps("current_password")}
+            />
+            <PasswordInput
+              label="Mật khẩu mới"
+              autoComplete="new-password"
+              leftSection={<IconShieldLock size={16} />}
+              {...passwordForm.getInputProps("new_password")}
+            />
+            <PasswordInput
+              label="Xác nhận mật khẩu mới"
+              autoComplete="new-password"
+              leftSection={<IconShieldLock size={16} />}
+              {...passwordForm.getInputProps("confirm_password")}
+            />
+            <Group justify="flex-end">
+              <Button
+                variant="default"
+                onClick={() => {
+                  setPasswordModalOpen(false);
+                  passwordForm.reset();
+                }}
+              >
+                Hủy
+              </Button>
+              <Button type="submit" loading={changePasswordMutation.isPending}>
+                Lưu mật khẩu
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
+    </>
   );
 }

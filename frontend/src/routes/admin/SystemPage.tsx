@@ -10,7 +10,6 @@ import {
   Group,
   NumberInput,
   Paper,
-  PasswordInput,
   Select,
   SimpleGrid,
   Skeleton,
@@ -19,23 +18,21 @@ import {
   Text,
   ThemeIcon,
 } from "@mantine/core";
-import { useForm, isNotEmpty, matchesField } from "@mantine/form";
+import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
   IconBrain,
   IconCpu,
   IconDatabase,
   IconDeviceFloppy,
-  IconKey,
   IconRefresh,
-  IconShieldLock,
 } from "@tabler/icons-react";
 import type { AxiosError } from "axios";
-import { changePassword } from "@/shared/api/auth";
 import { getSystemSettings, resetSystemSettings, updateSystemSettings } from "@/shared/api/system";
 import { useRequireAuth } from "@/shared/hooks/useRequireAuth";
 import { isOwner } from "@/shared/lib/access";
 import type { SystemSettingsUpdate } from "@/shared/types/api";
+import AccessDeniedState from "@/shared/ui/AccessDeniedState";
 import PageHeader from "@/shared/ui/PageHeader";
 
 function displayNumber(value: number) {
@@ -131,6 +128,7 @@ export default function SystemPage() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["system-settings"],
     queryFn: getSystemSettings,
+    enabled: canWrite,
   });
 
   const settingsForm = useForm<SystemSettingsUpdate>({
@@ -141,23 +139,6 @@ export default function SystemPage() {
       face_secondary_area_ratio: 0.35,
       business_timezone: "Asia/Ho_Chi_Minh",
       warmup_face_model: false,
-    },
-  });
-
-  const passwordForm = useForm({
-    initialValues: {
-      current_password: "",
-      new_password: "",
-      confirm_password: "",
-    },
-    validate: {
-      current_password: isNotEmpty("Nhập mật khẩu hiện tại."),
-      new_password: (value) => {
-        if (!value.trim()) return "Nhập mật khẩu mới.";
-        if (value.length < 8) return "Mật khẩu mới phải dài ít nhất 8 ký tự.";
-        return null;
-      },
-      confirm_password: matchesField("new_password", "Mật khẩu xác nhận không khớp."),
     },
   });
 
@@ -263,24 +244,15 @@ export default function SystemPage() {
     },
   });
 
-  const changePasswordMutation = useMutation({
-    mutationFn: changePassword,
-    onSuccess(response) {
-      notifications.show({
-        color: "teal",
-        title: "Đã cập nhật mật khẩu",
-        message: response.message,
-      });
-      passwordForm.reset();
-    },
-    onError(error: unknown) {
-      notifications.show({
-        color: "red",
-        title: "Đổi mật khẩu thất bại",
-        message: getErrorDetail(error),
-      });
-    },
-  });
+  if (!canWrite) {
+    return (
+      <AccessDeniedState
+        title="Không đủ quyền xem cấu hình hệ thống"
+        message="Cấu hình hệ thống chỉ dành cho owner/system admin. Admin vận hành và viewer không được xem hoặc sửa các tham số kỹ thuật."
+        onAction={() => window.history.back()}
+      />
+    );
+  }
 
   if (isLoading) {
     return (
@@ -311,7 +283,7 @@ export default function SystemPage() {
     <Stack gap="xl">
       <PageHeader
         title="Cấu hình hệ thống"
-        subtitle="Runtime settings an toàn cho recognition, reports và admin account."
+        subtitle="Runtime settings an toàn cho recognition và reports."
         actions={
           <Badge variant="light" color={canWrite ? "teal" : "gray"} size="lg">
             {canWrite ? "Có thể sửa" : "Chỉ xem"}
@@ -369,43 +341,6 @@ export default function SystemPage() {
           />
         </SettingsCard>
 
-        <SettingsCard title="Admin account" icon={<IconShieldLock size={21} stroke={1.8} />}>
-          <Text size="sm" c="var(--text-secondary)">
-            Đổi mật khẩu cho tài khoản đang đăng nhập.
-          </Text>
-          <form
-            onSubmit={passwordForm.onSubmit((values) =>
-              changePasswordMutation.mutate({
-                current_password: values.current_password,
-                new_password: values.new_password,
-              }),
-            )}
-          >
-            <Stack gap="sm">
-              <PasswordInput
-                label="Mật khẩu hiện tại"
-                autoComplete="current-password"
-                leftSection={<IconKey size={16} />}
-                {...passwordForm.getInputProps("current_password")}
-              />
-              <PasswordInput
-                label="Mật khẩu mới"
-                autoComplete="new-password"
-                leftSection={<IconShieldLock size={16} />}
-                {...passwordForm.getInputProps("new_password")}
-              />
-              <PasswordInput
-                label="Xác nhận mật khẩu mới"
-                autoComplete="new-password"
-                leftSection={<IconShieldLock size={16} />}
-                {...passwordForm.getInputProps("confirm_password")}
-              />
-              <Button type="submit" loading={changePasswordMutation.isPending}>
-                Đổi mật khẩu
-              </Button>
-            </Stack>
-          </form>
-        </SettingsCard>
       </SimpleGrid>
 
       <Paper

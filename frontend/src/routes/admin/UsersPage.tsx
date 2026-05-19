@@ -17,7 +17,7 @@ import {
   TextInput,
   Tooltip,
 } from "@mantine/core";
-import { useForm, isNotEmpty } from "@mantine/form";
+import { useForm } from "@mantine/form";
 import { useDebouncedValue } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconKey, IconPencil, IconPlus, IconSearch, IconTrash } from "@tabler/icons-react";
@@ -36,6 +36,7 @@ import AccessDeniedState from "@/shared/ui/AccessDeniedState";
 import PageHeader from "@/shared/ui/PageHeader";
 
 const PAGE_SIZE = 10;
+const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._-]{2,63}$/;
 
 const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "owner", label: "Owner" },
@@ -52,14 +53,35 @@ const ROLE_MATRIX: { role: UserRole; scope: string; canTest: string }[] = [
   {
     role: "admin",
     scope: "Vận hành: tạo/sửa nhân viên, enrollment, xóa lịch sử chấm công, xem báo cáo.",
-    canTest: "Đăng nhập admin rồi kiểm tra không thấy Người dùng và không sửa được Cấu hình.",
+    canTest: "Đăng nhập admin rồi kiểm tra không thấy Người dùng và Cấu hình.",
   },
   {
     role: "viewer",
-    scope: "Chỉ xem: tổng quan, nhân viên, chấm công, báo cáo, cấu hình hệ thống.",
-    canTest: "Đăng nhập viewer rồi kiểm tra không có nút tạo/xóa/enroll.",
+    scope: "Chỉ xem: tổng quan, nhân viên, chấm công và báo cáo.",
+    canTest: "Đăng nhập viewer rồi kiểm tra không có nút tạo/xóa/enroll và không thấy Cấu hình.",
   },
 ];
+
+function normalizeUsernameInput(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function validateUsername(value: string) {
+  const normalized = normalizeUsernameInput(value);
+  if (!USERNAME_PATTERN.test(normalized)) {
+    return "Username phải dài 3-64 ký tự và chỉ gồm chữ, số, dấu chấm, gạch ngang hoặc gạch dưới.";
+  }
+  return null;
+}
+
+function validatePassword(value: string) {
+  if (value !== value.trim()) return "Mật khẩu không được bắt đầu hoặc kết thúc bằng khoảng trắng.";
+  if (value.length < 8) return "Mật khẩu phải dài ít nhất 8 ký tự.";
+  if (!/[a-z]/i.test(value) || !/\d/.test(value)) {
+    return "Mật khẩu cần có ít nhất một chữ cái và một chữ số.";
+  }
+  return null;
+}
 
 function getErrorDetail(error: unknown, fallback: string) {
   const detail = (error as AxiosError<{ detail?: string }>).response?.data?.detail;
@@ -106,8 +128,8 @@ export default function UsersPage() {
       is_active: true,
     },
     validate: {
-      username: isNotEmpty("Bắt buộc nhập username."),
-      password: (value) => (value.length >= 8 ? null : "Mật khẩu phải dài ít nhất 8 ký tự."),
+      username: validateUsername,
+      password: validatePassword,
     },
   });
 
@@ -118,14 +140,14 @@ export default function UsersPage() {
       is_active: true,
     },
     validate: {
-      username: isNotEmpty("Bắt buộc nhập username."),
+      username: validateUsername,
     },
   });
 
   const resetForm = useForm({
     initialValues: { password: "" },
     validate: {
-      password: (value) => (value.length >= 8 ? null : "Mật khẩu phải dài ít nhất 8 ký tự."),
+      password: validatePassword,
     },
   });
 
@@ -371,7 +393,14 @@ export default function UsersPage() {
       </Stack>
 
       <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title="Tạo người dùng" centered>
-        <form onSubmit={createForm.onSubmit((values) => createMutation.mutate(values))}>
+        <form
+          onSubmit={createForm.onSubmit((values) =>
+            createMutation.mutate({
+              ...values,
+              username: normalizeUsernameInput(values.username),
+            }),
+          )}
+        >
           <Stack gap="md">
             <TextInput label="Tên đăng nhập" {...createForm.getInputProps("username")} />
             <PasswordInput label="Mật khẩu" {...createForm.getInputProps("password")} />
@@ -408,7 +437,7 @@ export default function UsersPage() {
             if (!editingUser) return;
             updateMutation.mutate({
               id: editingUser.id,
-              username: values.username,
+              username: normalizeUsernameInput(values.username),
               role: values.role,
               is_active: values.is_active,
             });

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.models.user import User
@@ -13,7 +13,8 @@ def authenticate_user(
     username: str,
     password: str,
 ) -> LoginResponse | None:
-    stmt = select(User).where(User.username == username)
+    normalized_username = username.strip().lower()
+    stmt = select(User).where(func.lower(User.username) == normalized_username)
     user = db.scalar(stmt)
 
     if user is None:

@@ -76,6 +76,45 @@ def test_create_admin_user_rejects_duplicate_username(client):
     assert duplicate_response.json() == {"detail": "Username already exists."}
 
 
+def test_create_admin_user_normalizes_username(client):
+    response = client.post(
+        "/api/admin/users",
+        json={
+            "username": "  Ops.Admin_01  ",
+            "password": "ops-admin-123",
+            "role": "admin",
+            "is_active": True,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["username"] == "ops.admin_01"
+
+
+def test_create_admin_user_rejects_invalid_username_and_weak_password(client):
+    invalid_username = client.post(
+        "/api/admin/users",
+        json={
+            "username": "ops admin",
+            "password": "ops-admin-123",
+            "role": "admin",
+            "is_active": True,
+        },
+    )
+    assert invalid_username.status_code == 422
+
+    weak_password = client.post(
+        "/api/admin/users",
+        json={
+            "username": "weak-user",
+            "password": "password",
+            "role": "admin",
+            "is_active": True,
+        },
+    )
+    assert weak_password.status_code == 422
+
+
 def test_owner_cannot_delete_self(client, admin_user):
     response = client.delete(f"/api/admin/users/{admin_user.id}")
 

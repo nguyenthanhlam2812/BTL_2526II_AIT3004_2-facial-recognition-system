@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.api.deps import require_admin, require_operator
+from backend.app.api.deps import require_admin, require_operator, require_owner
 from backend.app.main import app
 
 
@@ -26,3 +26,8 @@ def test_viewer_can_read_admin_pages_but_cannot_mutate(client, db_session, admin
     )
     assert create_response.status_code == 403
     assert create_response.json() == {"detail": "Owner or admin role is required."}
+
+    app.dependency_overrides.pop(require_owner, None)
+    system_response = client.get("/api/system/settings")
+    assert system_response.status_code == 403
+    assert system_response.json() == {"detail": "Owner role is required."}

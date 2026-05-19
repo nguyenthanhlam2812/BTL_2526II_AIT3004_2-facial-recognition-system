@@ -111,6 +111,18 @@ def test_non_owner_cannot_update_system_settings(client, db_session, admin_user)
     assert response.json() == {"detail": "Owner role is required."}
 
 
+def test_non_owner_cannot_read_system_settings(client, db_session, admin_user):
+    admin_user.role = "viewer"
+    db_session.add(admin_user)
+    db_session.commit()
+    app.dependency_overrides.pop(require_owner, None)
+
+    response = client.get("/api/system/settings")
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Owner role is required."}
+
+
 def _field_source(data: dict, key: str) -> str:
     field = next(item for item in data["fields"] if item["key"] == key)
     return field["source"]

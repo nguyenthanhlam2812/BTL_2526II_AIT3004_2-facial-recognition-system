@@ -116,7 +116,7 @@ def ensure_employee_code_available(
     *,
     exclude_employee_id: int | None = None,
 ) -> None:
-    stmt = select(Employee).where(Employee.employee_code == employee_code)
+    stmt = select(Employee).where(func.lower(Employee.employee_code) == employee_code.lower())
     if exclude_employee_id is not None:
         stmt = stmt.where(Employee.id != exclude_employee_id)
 

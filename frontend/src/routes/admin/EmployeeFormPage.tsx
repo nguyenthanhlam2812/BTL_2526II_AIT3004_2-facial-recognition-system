@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Group, Paper, SegmentedControl, Stack, Text, TextInput } from "@mantine/core";
-import { useForm, isNotEmpty } from "@mantine/form";
+import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { IconArrowLeft, IconDeviceFloppy } from "@tabler/icons-react";
 import type { AxiosError } from "axios";
@@ -12,6 +12,47 @@ import { canOperate } from "@/shared/lib/access";
 import type { Employee, EmployeeCreate, EmployeeStatus } from "@/shared/types/api";
 import AccessDeniedState from "@/shared/ui/AccessDeniedState";
 import PageHeader from "@/shared/ui/PageHeader";
+
+const EMPLOYEE_CODE_PATTERN = /^[A-Z0-9][A-Z0-9-]{1,31}$/;
+const UNSUPPORTED_TEXT_CHARS = new Set(["<", ">", "{", "}"]);
+
+function collapseSpaces(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function normalizeEmployeeValues(values: EmployeeCreate): EmployeeCreate {
+  return {
+    ...values,
+    employee_code: values.employee_code.trim().toUpperCase(),
+    full_name: collapseSpaces(values.full_name),
+    department: collapseSpaces(values.department),
+    position: collapseSpaces(values.position),
+  };
+}
+
+function validateEmployeeCode(value: string) {
+  const normalized = value.trim().toUpperCase();
+  if (!EMPLOYEE_CODE_PATTERN.test(normalized)) {
+    return "Mã nhân viên phải dài 2-32 ký tự, chỉ gồm chữ, số hoặc dấu gạch ngang.";
+  }
+  return null;
+}
+
+function validateBusinessText(label: string, minLength: number, maxLength: number) {
+  return (value: string) => {
+    const normalized = collapseSpaces(value);
+    if (normalized.length < minLength) return `${label} phải dài ít nhất ${minLength} ký tự.`;
+    if (normalized.length > maxLength) return `${label} tối đa ${maxLength} ký tự.`;
+    if (
+      [...normalized].some(
+        (char) => UNSUPPORTED_TEXT_CHARS.has(char) || char.charCodeAt(0) < 32,
+      )
+    ) {
+      return `${label} chứa ký tự không hợp lệ.`;
+    }
+    return null;
+  };
+}
 
 export default function EmployeeFormPage() {
   const navigate = useNavigate();
@@ -43,10 +84,10 @@ export default function EmployeeFormPage() {
       status: employee?.status ?? "active",
     },
     validate: {
-      employee_code: isNotEmpty("Bắt buộc nhập mã nhân viên"),
-      full_name: isNotEmpty("Bắt buộc nhập họ tên"),
-      department: isNotEmpty("Bắt buộc nhập phòng ban"),
-      position: isNotEmpty("Bắt buộc nhập chức vụ"),
+      employee_code: validateEmployeeCode,
+      full_name: validateBusinessText("Họ tên", 2, 100),
+      department: validateBusinessText("Phòng ban", 2, 64),
+      position: validateBusinessText("Chức vụ", 2, 64),
     },
   });
 
@@ -101,7 +142,7 @@ export default function EmployeeFormPage() {
         p={{ base: "lg", sm: "xl" }}
         style={{ background: "var(--bg-card)", borderColor: "var(--border-subtle)" }}
       >
-        <form onSubmit={form.onSubmit((values) => mutation.mutate(values))}>
+        <form onSubmit={form.onSubmit((values) => mutation.mutate(normalizeEmployeeValues(values)))}>
           <Stack gap="md">
             <TextInput
               label="Mã nhân viên"

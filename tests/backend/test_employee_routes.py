@@ -95,3 +95,75 @@ def test_get_employees_honors_department_filter(client, db_session):
     assert payload["total"] == 1
     assert [item["employee_code"] for item in payload["items"]] == ["E001"]
     assert payload["items"][0]["face_data_status"] == "pending"
+
+
+def test_create_employee_normalizes_business_fields(client):
+    response = client.post(
+        "/api/employees",
+        json={
+            "employee_code": " emp0001 ",
+            "full_name": "  Nguyen   Van   A  ",
+            "department": "  IT  ",
+            "position": "  Software   Engineer  ",
+            "status": "active",
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["employee_code"] == "EMP0001"
+    assert payload["full_name"] == "Nguyen Van A"
+    assert payload["department"] == "IT"
+    assert payload["position"] == "Software Engineer"
+
+
+def test_create_employee_rejects_invalid_business_fields(client):
+    invalid_code = client.post(
+        "/api/employees",
+        json={
+            "employee_code": "EMP 001",
+            "full_name": "Nguyen Van A",
+            "department": "IT",
+            "position": "Engineer",
+            "status": "active",
+        },
+    )
+    assert invalid_code.status_code == 422
+
+    invalid_name = client.post(
+        "/api/employees",
+        json={
+            "employee_code": "EMP0002",
+            "full_name": "<script>",
+            "department": "IT",
+            "position": "Engineer",
+            "status": "active",
+        },
+    )
+    assert invalid_name.status_code == 422
+
+
+def test_create_employee_rejects_duplicate_code_case_insensitively(client):
+    first_response = client.post(
+        "/api/employees",
+        json={
+            "employee_code": "EMP0003",
+            "full_name": "Nguyen Van A",
+            "department": "IT",
+            "position": "Engineer",
+            "status": "active",
+        },
+    )
+    assert first_response.status_code == 201
+
+    duplicate_response = client.post(
+        "/api/employees",
+        json={
+            "employee_code": "emp0003",
+            "full_name": "Nguyen Van B",
+            "department": "HR",
+            "position": "Manager",
+            "status": "active",
+        },
+    )
+    assert duplicate_response.status_code == 409

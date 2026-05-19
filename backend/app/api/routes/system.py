@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.deps import require_admin, require_owner
+from backend.app.api.deps import require_owner
 from backend.app.db.session import get_db
 from backend.app.models.user import User
 from backend.app.schemas.system import (
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/system", tags=["system"])
 @router.get("/settings", response_model=SystemSettingsResponse)
 def get_system_settings(
     db: Session = Depends(get_db),
-    _: User = Depends(require_admin),
+    _: User = Depends(require_owner),
 ) -> SystemSettingsResponse:
     return build_system_settings_response(db)
 
