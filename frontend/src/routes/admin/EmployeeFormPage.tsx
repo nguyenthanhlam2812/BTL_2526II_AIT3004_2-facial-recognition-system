@@ -1,12 +1,24 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Group, Paper, SegmentedControl, Stack, Text, TextInput } from "@mantine/core";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Button,
+  Combobox,
+  Group,
+  InputBase,
+  Paper,
+  ScrollArea,
+  SegmentedControl,
+  Stack,
+  Text,
+  TextInput,
+  useCombobox,
+} from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { IconArrowLeft, IconDeviceFloppy } from "@tabler/icons-react";
 import type { AxiosError } from "axios";
-import { createEmployee, updateEmployee } from "@/shared/api/employees";
+import { createEmployee, updateEmployee, listEmployeeDepartments } from "@/shared/api/employees";
 import { useRequireAuth } from "@/shared/hooks/useRequireAuth";
 import { canOperate } from "@/shared/lib/access";
 import type { Employee, EmployeeCreate, EmployeeStatus } from "@/shared/types/api";
@@ -54,6 +66,97 @@ function validateBusinessText(label: string, minLength: number, maxLength: numbe
   };
 }
 
+/**
+ * Combobox creatable cho Department/Position:
+ * - Hiển dropdown với danh sách từ DB
+ * - Cho phép nhập mới nếu chưa có trong list
+ * - Bật search để lọc nhanh
+ */
+function DepartmentCombobox({
+  value,
+  onChange,
+  error,
+  departments,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  error?: React.ReactNode;
+  departments: string[];
+}) {
+  const combobox = useCombobox({
+    onDropdownClose: () => combobox.resetSelectedOption(),
+  });
+  const [search, setSearch] = useState(value);
+
+  const filtered = departments.filter((d) =>
+    d.toLowerCase().includes(search.toLowerCase().trim())
+  );
+
+  const exactMatch = departments.some(
+    (d) => d.toLowerCase() === search.toLowerCase().trim()
+  );
+
+  const options = filtered.map((d) => (
+    <Combobox.Option value={d} key={d}>
+      {d}
+    </Combobox.Option>
+  ));
+
+  return (
+    <Combobox
+      store={combobox}
+      withinPortal={false}
+      onOptionSubmit={(val) => {
+        onChange(val);
+        setSearch(val);
+        combobox.closeDropdown();
+      }}
+    >
+      <Combobox.Target>
+        <InputBase
+          label="Phòng ban"
+          rightSection={<Combobox.Chevron />}
+          value={search}
+          onChange={(event) => {
+            combobox.openDropdown();
+            combobox.updateSelectedOptionIndex();
+            const v = event.currentTarget.value;
+            setSearch(v);
+            onChange(v); // giữ form và input đồng bộ
+          }}
+          onClick={() => combobox.openDropdown()}
+          onFocus={() => combobox.openDropdown()}
+          onBlur={() => {
+            const normalized = collapseSpaces(search);
+            onChange(normalized);
+            setSearch(normalized);
+            combobox.closeDropdown();
+          }}
+          placeholder="IT"
+          rightSectionPointerEvents="none"
+          error={error}
+        />
+      </Combobox.Target>
+
+      <Combobox.Dropdown>
+        <Combobox.Options>
+          <ScrollArea.Autosize mah={200} type="scroll">
+            {options}
+            {!exactMatch && search.trim().length >= 2 && (
+              <Combobox.Option value={search.trim()}>
+                + Thêm &quot;{search.trim()}&quot;
+              </Combobox.Option>
+            )}
+            {filtered.length === 0 && search.trim().length < 2 && (
+              <Combobox.Empty>Nhập tên phòng ban...</Combobox.Empty>
+            )}
+          </ScrollArea.Autosize>
+        </Combobox.Options>
+      </Combobox.Dropdown>
+    </Combobox>
+  );
+}
+
 export default function EmployeeFormPage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -64,6 +167,11 @@ export default function EmployeeFormPage() {
 
   const isEdit = !!id;
   const employee = state?.employee as Employee | undefined;
+
+  const { data: departments = [] } = useQuery({
+    queryKey: ["employees", "departments"],
+    queryFn: listEmployeeDepartments,
+  });
 
   useEffect(() => {
     if (isEdit && !employee) {
@@ -156,7 +264,12 @@ export default function EmployeeFormPage() {
               placeholder="Nguyen Van A"
               {...form.getInputProps("full_name")}
             />
-            <TextInput label="Phòng ban" placeholder="IT" {...form.getInputProps("department")} />
+            <DepartmentCombobox
+              value={form.values.department}
+              onChange={(val) => form.setFieldValue("department", val)}
+              error={form.errors.department}
+              departments={departments}
+            />
             <TextInput
               label="Chức vụ"
               placeholder="Software Engineer"

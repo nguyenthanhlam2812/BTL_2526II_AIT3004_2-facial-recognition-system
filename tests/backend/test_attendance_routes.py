@@ -167,16 +167,26 @@ def test_post_attendance_frame_rate_limits_after_ten_requests(client, monkeypatc
 
 
 def test_get_attendance_events_returns_service_payload(client, monkeypatch):
+    captured = {}
+
+    def fake_service(_db, **kwargs):
+        captured.update(kwargs)
+        return AttendanceEventListResponse(items=[], total=0)
+
     monkeypatch.setattr(
         attendance_route,
         "list_attendance_events_service",
-        lambda *args, **kwargs: AttendanceEventListResponse(items=[], total=0),
+        fake_service,
     )
 
-    response = client.get("/api/attendance/events?page=1&page_size=20")
+    response = client.get(
+        "/api/attendance/events",
+        params={"attendance_status": "unknown_face", "page": 1, "page_size": 20},
+    )
 
     assert response.status_code == 200
     assert response.json() == {"items": [], "total": 0}
+    assert captured["attendance_status"] == "unknown_face"
 
 
 def test_export_attendance_events_csv_returns_attachment(client, monkeypatch):
@@ -194,7 +204,11 @@ def test_export_attendance_events_csv_returns_attachment(client, monkeypatch):
 
     response = client.get(
         "/api/attendance/events/export.csv",
-        params={"employee_id": 3, "action_type": "check_in"},
+        params={
+            "employee_id": 3,
+            "action_type": "check_in",
+            "attendance_status": "recorded",
+        },
     )
 
     assert response.status_code == 200
@@ -203,6 +217,7 @@ def test_export_attendance_events_csv_returns_attachment(client, monkeypatch):
     assert response.text.startswith("\ufeffevent_id,event_time")
     assert captured["employee_id"] == 3
     assert captured["action_type"] == "check_in"
+    assert captured["attendance_status"] == "recorded"
 
 
 def test_export_attendance_events_csv_returns_400_for_large_exports(client, monkeypatch):

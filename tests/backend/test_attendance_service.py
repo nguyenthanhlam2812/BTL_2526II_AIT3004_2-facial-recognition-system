@@ -784,6 +784,31 @@ def test_delete_attendance_events_by_ids_keeps_unselected_events(db_session):
     assert remaining_ids == [events[1].id]
 
 
+def test_list_attendance_events_filters_by_attendance_status(db_session):
+    db_session.add_all(
+        [
+            AttendanceEvent(action_type="check_in", attendance_status="unknown_face"),
+            AttendanceEvent(action_type="check_out", attendance_status="recorded"),
+            AttendanceEvent(action_type="check_in", attendance_status="multiple_faces"),
+        ]
+    )
+    db_session.commit()
+
+    response = attendance_service.list_attendance_events(
+        db_session,
+        employee_id=None,
+        action_type=None,
+        attendance_status="unknown_face",
+        from_=None,
+        to=None,
+        page=1,
+        page_size=20,
+    )
+
+    assert response.total == 1
+    assert response.items[0].attendance_status == "unknown_face"
+
+
 def test_export_attendance_events_csv_uses_filters_and_includes_employee_fields(db_session):
     employee = Employee(
         employee_code="E900",
@@ -814,6 +839,14 @@ def test_export_attendance_events_csv_uses_filters_and_includes_employee_fields(
                 score=Decimal("0.9100"),
                 captured_at=datetime(2026, 5, 11, 17, 45, 0),
             ),
+            AttendanceEvent(
+                employee_id=employee.id,
+                action_type="check_in",
+                attendance_status="unknown_face",
+                camera_id="cam-03",
+                score=None,
+                captured_at=datetime(2026, 5, 11, 9, 15, 0),
+            ),
         ]
     )
     db_session.commit()
@@ -822,6 +855,7 @@ def test_export_attendance_events_csv_uses_filters_and_includes_employee_fields(
         db_session,
         employee_id=employee.id,
         action_type="check_in",
+        attendance_status="recorded",
         from_=None,
         to=None,
     )
@@ -874,6 +908,7 @@ def test_export_attendance_events_csv_rejects_results_over_cap(db_session, monke
             db_session,
             employee_id=employee.id,
             action_type="check_in",
+            attendance_status=None,
             from_=None,
             to=None,
         )
@@ -1091,6 +1126,7 @@ def test_list_attendance_events_serializes_business_local_wall_time(db_session):
         db_session,
         employee_id=employee.id,
         action_type="check_in",
+        attendance_status=None,
         from_=None,
         to=None,
         page=1,

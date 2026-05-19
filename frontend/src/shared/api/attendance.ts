@@ -10,6 +10,7 @@ import type {
 export async function listAttendanceEvents(params?: {
   employee_id?: number;
   action_type?: "check_in" | "check_out";
+  attendance_status?: "recorded" | "unknown_face" | "multiple_faces";
   from?: string; // ISO 8601
   to?: string;   // ISO 8601
   page?: number;
@@ -36,6 +37,7 @@ export async function deleteSelectedAttendanceEvents(
 export async function exportAttendanceEventsCsv(params?: {
   employee_id?: number;
   action_type?: "check_in" | "check_out";
+  attendance_status?: "recorded" | "unknown_face" | "multiple_faces";
   from?: string;
   to?: string;
 }): Promise<{ blob: Blob; filename: string }> {

@@ -270,6 +270,7 @@ def list_attendance_events(
     *,
     employee_id: int | None,
     action_type: AttendanceActionType | None,
+    attendance_status: AttendanceStatus | None,
     from_: datetime | None,
     to: datetime | None,
     page: int,
@@ -278,6 +279,7 @@ def list_attendance_events(
     filters = _build_attendance_filters(
         employee_id=employee_id,
         action_type=action_type,
+        attendance_status=attendance_status,
         from_=from_,
         to=to,
     )
@@ -308,12 +310,14 @@ def export_attendance_events_csv(
     *,
     employee_id: int | None,
     action_type: AttendanceActionType | None,
+    attendance_status: AttendanceStatus | None,
     from_: datetime | None,
     to: datetime | None,
 ) -> str:
     filters = _build_attendance_filters(
         employee_id=employee_id,
         action_type=action_type,
+        attendance_status=attendance_status,
         from_=from_,
         to=to,
     )
@@ -685,6 +689,7 @@ def _build_attendance_filters(
     *,
     employee_id: int | None,
     action_type: AttendanceActionType | None,
+    attendance_status: AttendanceStatus | None,
     from_: datetime | None,
     to: datetime | None,
 ) -> list[object]:
@@ -699,6 +704,9 @@ def _build_attendance_filters(
 
     if action_type is not None:
         filters.append(AttendanceEvent.action_type == action_type)
+
+    if attendance_status is not None:
+        filters.append(AttendanceEvent.attendance_status == attendance_status)
 
     if from_ is not None:
         filters.append(event_time >= _normalize_utc_naive(from_))

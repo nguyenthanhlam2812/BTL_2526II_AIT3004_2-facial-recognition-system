@@ -28,6 +28,7 @@ from backend.app.schemas.attendance import (
     AttendanceEventsDeleteResponse,
     AttendanceEventListResponse,
     AttendanceFrameResponse,
+    AttendanceStatus,
 )
 from backend.app.services.attendance_service import (
     AttendanceInfrastructureError,
@@ -81,6 +82,7 @@ def recognize_attendance_frame(
 def list_attendance_events(
     employee_id: int | None = Query(default=None),
     action_type: AttendanceActionType | None = Query(default=None),
+    attendance_status: AttendanceStatus | None = Query(default=None),
     from_: datetime | None = Query(default=None, alias="from"),
     to: datetime | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -92,6 +94,7 @@ def list_attendance_events(
         db,
         employee_id=employee_id,
         action_type=action_type,
+        attendance_status=attendance_status,
         from_=from_,
         to=to,
         page=page,
@@ -184,6 +187,7 @@ def get_attendance_dashboard_summary(
 def export_attendance_events_csv(
     employee_id: int | None = Query(default=None),
     action_type: AttendanceActionType | None = Query(default=None),
+    attendance_status: AttendanceStatus | None = Query(default=None),
     from_: datetime | None = Query(default=None, alias="from"),
     to: datetime | None = Query(default=None),
     db: Session = Depends(get_db),
@@ -194,6 +198,7 @@ def export_attendance_events_csv(
             db,
             employee_id=employee_id,
             action_type=action_type,
+            attendance_status=attendance_status,
             from_=from_,
             to=to,
         )

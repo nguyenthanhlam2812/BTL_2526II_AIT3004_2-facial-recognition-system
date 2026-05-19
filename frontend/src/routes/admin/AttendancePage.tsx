@@ -37,6 +37,12 @@ const ACTION_OPTIONS = [
   { value: "check_out", label: "Check-out" },
 ];
 
+const ATTENDANCE_STATUS_OPTIONS = [
+  { value: "recorded", label: "Ghi nhận" },
+  { value: "unknown_face", label: "Không nhận ra" },
+  { value: "multiple_faces", label: "Nhiều khuôn mặt" },
+];
+
 function getErrorDetail(error: unknown, fallback: string) {
   return (error as AxiosError<{ detail?: string }>).response?.data?.detail ?? fallback;
 }
@@ -70,6 +76,7 @@ export default function AttendancePage() {
 
   const [employeeId, setEmployeeId] = useState<string | null>(null);
   const [actionType, setActionType] = useState<string | null>(null);
+  const [attendanceStatus, setAttendanceStatus] = useState<string | null>(null);
   const [from, setFrom] = useState<string | null>(null);
   const [to, setTo] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -91,12 +98,13 @@ export default function AttendancePage() {
   const attendanceFilters = {
     employee_id: employeeId ? Number(employeeId) : undefined,
     action_type: (actionType as AttendanceActionType) || undefined,
+    attendance_status: (attendanceStatus as AttendanceStatus) || undefined,
     from: from ? dayjs(from).startOf("day").toISOString() : undefined,
     to: to ? dayjs(to).endOf("day").toISOString() : undefined,
   };
 
   const { data, isLoading } = useQuery({
-    queryKey: ["attendance-events", { employeeId, actionType, from, to, page }],
+    queryKey: ["attendance-events", { employeeId, actionType, attendanceStatus, from, to, page }],
     queryFn: () =>
       listAttendanceEvents({
         ...attendanceFilters,
@@ -183,6 +191,7 @@ export default function AttendancePage() {
   function handleReset() {
     setEmployeeId(null);
     setActionType(null);
+    setAttendanceStatus(null);
     setFrom(null);
     setTo(null);
     setSelectedIds([]);
@@ -313,6 +322,19 @@ export default function AttendancePage() {
               }}
               clearable
               w={150}
+            />
+            <Select
+              label="Trạng thái nhận diện"
+              placeholder="Tất cả"
+              data={ATTENDANCE_STATUS_OPTIONS}
+              value={attendanceStatus}
+              onChange={(value) => {
+                setAttendanceStatus(value);
+                setSelectedIds([]);
+                setPage(1);
+              }}
+              clearable
+              w={200}
             />
             <DatePickerInput
               label="Từ ngày"
