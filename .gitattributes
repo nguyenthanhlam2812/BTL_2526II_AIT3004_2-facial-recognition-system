@@ -1,0 +1,21 @@
+# Normalize line endings so Windows and Unix contributors do not produce
+# noisy "LF will be replaced by CRLF" warnings on git add. Repo canon is LF.
+
+* text=auto eol=lf
+
+# Binary types — never touch their bytes.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.bmp   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.tar   binary
+*.gz    binary
+*.tflite binary
+*.wasm  binary
+*.woff  binary
+*.woff2 binary

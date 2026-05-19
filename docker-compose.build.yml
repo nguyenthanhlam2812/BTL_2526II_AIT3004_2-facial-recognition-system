@@ -16,3 +16,9 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+
+  nginx:
+    image: tlam281206/ai-facial-recognition-nginx:latest
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile

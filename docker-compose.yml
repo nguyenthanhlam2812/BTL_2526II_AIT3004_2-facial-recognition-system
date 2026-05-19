@@ -84,6 +84,18 @@ services:
         required: false
     depends_on:
       - backend
+
+  nginx:
+    image: tlam281206/ai-facial-recognition-nginx:latest
+    restart: unless-stopped
+    env_file:
+      - path: .env.docker.example
+        required: true
+      - path: .env.docker
+        required: false
+    depends_on:
+      - backend
+      - frontend
     ports:
       - "8080:80"
 

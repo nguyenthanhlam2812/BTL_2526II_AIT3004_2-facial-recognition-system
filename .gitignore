@@ -1,5 +1,6 @@
 .venv/
 __pycache__/
+node_modules/
 artifacts/
 .playwright-cli/
 pytest-cache-files-*/
@@ -7,6 +8,10 @@ pytest-cache-files-*/
 *.pyc
 .env
 .env.docker
+
+# Stray root-level npm artifacts (the canonical FE workspace is `frontend/`).
+/package.json
+/package-lock.json
 data/demo/**/*.jpg
 data/demo/**/*.jpeg
 data/demo/**/*.png
