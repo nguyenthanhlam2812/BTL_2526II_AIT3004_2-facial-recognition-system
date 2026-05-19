@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import require_admin, require_operator
+from backend.app.api.validators import ensure_image_mime, ensure_image_size_bytes
 from backend.app.db.session import get_db
 from backend.app.models.user import User
 from backend.app.schemas.enrollment import (
@@ -9,6 +10,7 @@ from backend.app.schemas.enrollment import (
     EnrollmentStatusResponse,
 )
 from backend.app.services.enrollment_service import (
+    DuplicateFaceEnrollmentError,
     EmployeeNotFoundError,
     EnrollmentInfrastructureError,
     InvalidEnrollmentFilesError,
@@ -30,6 +32,11 @@ def create_enrollment(
     db: Session = Depends(get_db),
     _: User = Depends(require_operator),
 ) -> EnrollmentCreateResponse:
+    for upload in files:
+        ensure_image_mime(upload.content_type)
+        if upload.size is not None:
+            ensure_image_size_bytes(upload.size)
+
     try:
         enrollment = create_enrollment_service(db, employee_id, files)
     except EmployeeNotFoundError as exc:
@@ -40,6 +47,11 @@ def create_enrollment(
     except InvalidEnrollmentFilesError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except DuplicateFaceEnrollmentError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
     except EnrollmentInfrastructureError as exc:

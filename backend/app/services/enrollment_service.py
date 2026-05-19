@@ -12,6 +12,7 @@ from backend.app.config import get_settings
 from backend.app.models.employee import Employee
 from backend.app.models.enrollment import Enrollment
 from backend.app.models.enrollment_image import EnrollmentImage
+from backend.app.services.face_analyzer import analyze_image_bytes
 from backend.app.services.minio_service import (
     ObjectStorageError,
     delete_objects,
@@ -21,6 +22,10 @@ from backend.app.services.minio_service import (
 from backend.app.services.queue_service import (
     QueueUnavailableError,
     enqueue_enrollment_job,
+)
+from backend.app.services.qdrant_service import (
+    VectorStoreError,
+    find_duplicate_face_owner,
 )
 
 
@@ -36,6 +41,16 @@ class EnrollmentInfrastructureError(Exception):
     pass
 
 
+class DuplicateFaceEnrollmentError(Exception):
+    def __init__(self, employee_id: int, score: float) -> None:
+        self.employee_id = employee_id
+        self.score = score
+        super().__init__(
+            f"Khuôn mặt đã được đăng ký cho nhân viên #{employee_id} "
+            f"(độ trùng khớp {score:.2f}). Hệ thống từ chối đăng ký mới."
+        )
+
+
 ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
@@ -49,6 +64,7 @@ def create_enrollment(
         raise EmployeeNotFoundError
 
     validate_enrollment_files(files)
+    _check_enrollment_for_duplicates(files, employee_id)
 
     job_id = f"job_{uuid4().hex[:12]}"
     settings = get_settings()
@@ -163,6 +179,35 @@ def validate_enrollment_files(files: list[UploadFile]) -> None:
         if not is_image_file(file):
             raise InvalidEnrollmentFilesError(
                 f"File '{file.filename}' is not a supported image."
+            )
+
+
+def _check_enrollment_for_duplicates(
+    files: list[UploadFile],
+    employee_id: int,
+) -> None:
+    threshold = get_settings().duplicate_enroll_threshold
+    for f in files:
+        image_bytes = f.file.read()
+        f.file.seek(0)
+
+        result = analyze_image_bytes(image_bytes)
+        if result["status"] != "success":
+            continue
+
+        try:
+            duplicate = find_duplicate_face_owner(
+                embedding=result["embedding"],
+                exclude_employee_id=employee_id,
+                threshold=threshold,
+            )
+        except VectorStoreError:
+            return  # Qdrant unavailable → fail open, worker guard is the real gate
+
+        if duplicate is not None:
+            raise DuplicateFaceEnrollmentError(
+                employee_id=duplicate.employee_id,
+                score=duplicate.score,
             )
 
 

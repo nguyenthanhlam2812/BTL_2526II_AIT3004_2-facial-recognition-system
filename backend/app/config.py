@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     redis_url: str = Field(default="redis://127.0.0.1:6379/0")
     enrollment_queue: str = Field(default="enrollment")
-    rate_limit_storage_uri: str = Field(default="memory://")
+    rate_limit_storage_uri: str | None = Field(default=None)
 
     minio_endpoint: str = Field(default="127.0.0.1:9000")
     minio_access_key: str = Field(default="minioadmin")
@@ -60,6 +60,7 @@ class Settings(BaseSettings):
 
     qdrant_url: str = Field(default="http://127.0.0.1:6333")
     attendance_threshold: float = Field(default=0.3)
+    duplicate_enroll_threshold: float = Field(default=0.6)
     insightface_model_name: str = Field(default="buffalo_l")
     qdrant_collection_employee_faces: str = Field(default="employee_faces")
     face_min_det_score: float = Field(default=0.5)
@@ -74,6 +75,10 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    def model_post_init(self, _context) -> None:
+        if not self.rate_limit_storage_uri:
+            object.__setattr__(self, "rate_limit_storage_uri", self.redis_url)
 
     @property
     def mysql_url(self) -> str:

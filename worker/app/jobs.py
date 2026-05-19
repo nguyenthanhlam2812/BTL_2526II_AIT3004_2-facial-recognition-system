@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from backend.app.config import get_settings
 from backend.app.db.session import SessionLocal
 from backend.app.models.enrollment import Enrollment
 from backend.app.services.minio_service import (
@@ -18,7 +19,10 @@ from backend.app.services.system_settings_service import get_effective_runtime_s
 from worker.app.face_analyzer import analyze_image_bytes
 
 from backend.app.services.qdrant_service import (
+    FaceSearchResult,
     VectorStoreError,
+    delete_face_embeddings,
+    find_duplicate_face_owner,
     upsert_face_embedding,
 )
 
@@ -51,6 +55,17 @@ def process_enrollment_job(payload: dict[str, Any]) -> dict[str, Any]:
 
         bucket_name = str(payload.get("bucket_name", "enrollments"))
         runtime_settings = get_effective_runtime_settings(db)
+        duplicate_threshold = get_settings().duplicate_enroll_threshold
+
+        upserted_point_ids: list[int] = []
+        for image in enrollment.images:
+            if image.processing_status == "success" and image.qdrant_point_id is not None:
+                try:
+                    upserted_point_ids.append(int(image.qdrant_point_id))
+                except (TypeError, ValueError):
+                    pass
+
+        duplicate_match: FaceSearchResult | None = None
 
         for image in enrollment.images:
             if image.processing_status == "success":
@@ -87,13 +102,13 @@ def process_enrollment_job(payload: dict[str, Any]) -> dict[str, Any]:
                 )
                 continue
 
+            embedding = list(result["embedding"])
+
             try:
-                point_id = upsert_face_embedding(
-                    employee_id=enrollment.employee_id,
-                    enrollment_id=enrollment.id,
-                    enrollment_image_id=image.id,
-                    object_key=image.object_key,
-                    embedding=list(result["embedding"]),
+                duplicate_match = find_duplicate_face_owner(
+                    embedding=embedding,
+                    exclude_employee_id=enrollment.employee_id,
+                    threshold=duplicate_threshold,
                 )
             except VectorStoreError as exc:
                 _mark_enrollment_pending_for_retry(
@@ -103,9 +118,41 @@ def process_enrollment_job(payload: dict[str, Any]) -> dict[str, Any]:
                 )
                 raise RetryableEnrollmentInfrastructureError(str(exc)) from exc
 
+            if duplicate_match is not None:
+                break
+
+            try:
+                point_id = upsert_face_embedding(
+                    employee_id=enrollment.employee_id,
+                    enrollment_id=enrollment.id,
+                    enrollment_image_id=image.id,
+                    object_key=image.object_key,
+                    embedding=embedding,
+                )
+            except VectorStoreError as exc:
+                _mark_enrollment_pending_for_retry(
+                    db,
+                    enrollment,
+                    f"Temporary vector store error: {exc}",
+                )
+                raise RetryableEnrollmentInfrastructureError(str(exc)) from exc
+
+            upserted_point_ids.append(image.id)
             image.processing_status = "success"
             image.qdrant_point_id = point_id
             image.error_message = None
+
+        if duplicate_match is not None:
+            _reject_enrollment_as_duplicate(
+                db,
+                enrollment,
+                upserted_point_ids,
+                duplicate_match,
+            )
+            return {
+                "status": enrollment.status,
+                "message": enrollment.message,
+            }
 
         _apply_terminal_enrollment_state(enrollment)
         db.commit()
@@ -167,6 +214,39 @@ def _mark_enrollment_pending_for_retry(
     enrollment.failed_count = failed_count
     enrollment.completed_at = None
     enrollment.message = message
+    db.commit()
+
+
+def _reject_enrollment_as_duplicate(
+    db,
+    enrollment: Enrollment,
+    upserted_point_ids: list[int],
+    duplicate_match: FaceSearchResult,
+) -> None:
+    if upserted_point_ids:
+        try:
+            delete_face_embeddings(list(upserted_point_ids))
+        except VectorStoreError:
+            logger.exception(
+                "Failed to roll back embeddings for enrollment '%s' after duplicate detection.",
+                enrollment.job_id,
+            )
+
+    error_message = (
+        f"Khuôn mặt đã được đăng ký cho nhân viên #{duplicate_match.employee_id} "
+        f"(độ trùng khớp {duplicate_match.score:.2f}). Hệ thống từ chối đăng ký mới."
+    )
+
+    for image in enrollment.images:
+        image.processing_status = "failed"
+        image.qdrant_point_id = None
+        image.error_message = error_message
+
+    enrollment.status = "failed"
+    enrollment.message = error_message
+    enrollment.completed_at = datetime.utcnow()
+    enrollment.processed_count = 0
+    enrollment.failed_count = len(enrollment.images)
     db.commit()
 
 

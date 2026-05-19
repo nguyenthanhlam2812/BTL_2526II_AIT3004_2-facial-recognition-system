@@ -11,6 +11,7 @@ from backend.app.models.employee import Employee
 from backend.app.models.enrollment import Enrollment
 from backend.app.models.enrollment_image import EnrollmentImage
 from backend.app.services import enrollment_service
+from backend.app.services.qdrant_service import FaceSearchResult, VectorStoreError
 from backend.app.services.queue_service import QueueUnavailableError
 
 
@@ -139,3 +140,97 @@ def test_validate_enrollment_files_rejects_unsupported_file_type():
         match="is not a supported image",
     ):
         enrollment_service.validate_enrollment_files(files)
+
+
+# --- duplicate pre-check tests ---
+
+def _mock_analyze_success(image_bytes: bytes) -> dict:
+    return {"status": "success", "embedding": [0.1] * 512}
+
+
+def _mock_analyze_failed(image_bytes: bytes) -> dict:
+    return {"status": "failed", "error_message": "No face detected."}
+
+
+def test_check_enrollment_raises_when_duplicate_face_found(monkeypatch):
+    monkeypatch.setattr(enrollment_service, "analyze_image_bytes", _mock_analyze_success)
+    monkeypatch.setattr(
+        enrollment_service,
+        "find_duplicate_face_owner",
+        lambda **kwargs: FaceSearchResult(
+            employee_id=99, score=0.87, payload={}, point_id=42
+        ),
+    )
+
+    files = [make_upload_file("face.jpg")]
+
+    with pytest.raises(enrollment_service.DuplicateFaceEnrollmentError) as exc_info:
+        enrollment_service._check_enrollment_for_duplicates(files, employee_id=7)
+
+    assert exc_info.value.employee_id == 99
+    assert "đăng ký cho nhân viên #99" in str(exc_info.value)
+
+
+def test_check_enrollment_skips_image_when_analysis_fails(monkeypatch):
+    monkeypatch.setattr(enrollment_service, "analyze_image_bytes", _mock_analyze_failed)
+
+    called = []
+    monkeypatch.setattr(
+        enrollment_service,
+        "find_duplicate_face_owner",
+        lambda **kwargs: called.append(kwargs) or None,
+    )
+
+    files = [make_upload_file("face.jpg"), make_upload_file("face2.jpg")]
+    enrollment_service._check_enrollment_for_duplicates(files, employee_id=7)
+
+    assert called == []
+
+
+def test_check_enrollment_fails_open_when_qdrant_unavailable(monkeypatch):
+    monkeypatch.setattr(enrollment_service, "analyze_image_bytes", _mock_analyze_success)
+    monkeypatch.setattr(
+        enrollment_service,
+        "find_duplicate_face_owner",
+        lambda **kwargs: (_ for _ in ()).throw(VectorStoreError("Qdrant down")),
+    )
+
+    files = [make_upload_file("face.jpg")]
+    # Should not raise — fail open so the worker guard can catch it later
+    enrollment_service._check_enrollment_for_duplicates(files, employee_id=7)
+
+
+def test_check_enrollment_skips_same_employee(monkeypatch):
+    monkeypatch.setattr(enrollment_service, "analyze_image_bytes", _mock_analyze_success)
+    # find_duplicate_face_owner returning None means "same employee or below threshold"
+    monkeypatch.setattr(
+        enrollment_service,
+        "find_duplicate_face_owner",
+        lambda **kwargs: None,
+    )
+
+    files = [make_upload_file("face.jpg")]
+    enrollment_service._check_enrollment_for_duplicates(files, employee_id=7)
+
+
+def test_create_enrollment_returns_409_on_duplicate_face(db_session, monkeypatch):
+    employee = seed_employee(db_session)
+
+    monkeypatch.setattr(enrollment_service, "analyze_image_bytes", _mock_analyze_success)
+    monkeypatch.setattr(
+        enrollment_service,
+        "find_duplicate_face_owner",
+        lambda **kwargs: FaceSearchResult(
+            employee_id=999, score=0.91, payload={}, point_id=1
+        ),
+    )
+    monkeypatch.setattr(enrollment_service, "ensure_bucket_exists", lambda _: None)
+    monkeypatch.setattr(enrollment_service, "upload_object_bytes", lambda *a: None)
+    monkeypatch.setattr(enrollment_service, "enqueue_enrollment_job", lambda _: None)
+
+    with pytest.raises(enrollment_service.DuplicateFaceEnrollmentError):
+        enrollment_service.create_enrollment(
+            db_session,
+            employee.id,
+            [make_upload_file("face.jpg")],
+        )

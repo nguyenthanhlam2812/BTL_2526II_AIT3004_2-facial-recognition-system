@@ -10,8 +10,11 @@ import {
   Group,
   Image,
   Paper,
+  Progress,
   SegmentedControl,
+  SimpleGrid,
   Stack,
+  Switch,
   Text,
   ThemeIcon,
   Tooltip,
@@ -20,10 +23,12 @@ import { Dropzone, IMAGE_MIME_TYPE } from "@mantine/dropzone";
 import { notifications } from "@mantine/notifications";
 import {
   IconArrowLeft,
+  IconArrowRight,
   IconCamera,
   IconCameraOff,
   IconCheck,
   IconPhoto,
+  IconRefresh,
   IconSparkles,
   IconTrash,
   IconUpload,
@@ -36,10 +41,65 @@ import { canOperate } from "@/shared/lib/access";
 import type { Employee } from "@/shared/types/api";
 import AccessDeniedState from "@/shared/ui/AccessDeniedState";
 import PageHeader from "@/shared/ui/PageHeader";
+import FaceBboxOverlay from "@/routes/kiosk/components/FaceBboxOverlay";
+import { useFaceDetector, type FaceBbox } from "@/routes/kiosk/hooks/useFaceDetector";
 
 const MAX_FILES = 5;
 const MAX_SIZE_BYTES = 5 * 1024 * 1024;
+const FACE_MIN_WIDTH_RATIO = 0.3;
+const FACE_CENTER_TOLERANCE = 0.25;
+const FACE_YAW_FRONT_TOLERANCE = 0.055;
+const FACE_YAW_TURN_THRESHOLD = 0.075;
+const AUTO_CAPTURE_HOLD_MS = 900;
+const AUTO_CAPTURE_TICK_MS = 80;
+const AUTO_CAPTURE_COOLDOWN_MS = 650;
 type EnrollMode = "upload" | "camera";
+type CaptureSource = "manual" | "auto";
+type FacePoseDirection = "front" | "left" | "right";
+
+type FaceQualityStatus =
+  | "idle"
+  | "loading"
+  | "error"
+  | "no-face"
+  | "multi-face"
+  | "small-face"
+  | "off-center"
+  | "wrong-pose"
+  | "ready";
+
+type FaceQuality = {
+  status: FaceQualityStatus;
+  canCapture: boolean;
+  message: string;
+};
+
+const CAMERA_POSES = [
+  {
+    key: "front",
+    label: "Nhìn thẳng",
+    direction: "front",
+    instruction: "Nhìn thẳng vào camera, giữ mặt ở giữa khung hình.",
+    cue: "Nhìn thẳng",
+  },
+  {
+    key: "left",
+    label: "Quay trái",
+    direction: "left",
+    instruction: "Quay mặt nhẹ sang trái, vẫn giữ khuôn mặt trong khung.",
+    cue: "Quay trái",
+  },
+  {
+    key: "right",
+    label: "Quay phải",
+    direction: "right",
+    instruction: "Quay mặt nhẹ sang phải, tránh nghiêng quá xa khỏi camera.",
+    cue: "Quay phải",
+  },
+] as const;
+
+type CameraPoseKey = (typeof CAMERA_POSES)[number]["key"];
+type CameraCaptureMap = Partial<Record<CameraPoseKey, File>>;
 
 export default function EnrollPage() {
   const navigate = useNavigate();
@@ -49,28 +109,171 @@ export default function EnrollPage() {
   const canMutate = canOperate(user?.role);
   const employee = state?.employee as Employee | undefined;
 
-  const [files, setFiles] = useState<File[]>([]);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [cameraCaptures, setCameraCaptures] = useState<CameraCaptureMap>({});
+  const [activePoseKey, setActivePoseKey] = useState<CameraPoseKey>("front");
   const [jobId, setJobId] = useState<string | null>(null);
   const [mode, setMode] = useState<EnrollMode>("upload");
+  const [autoCaptureEnabled, setAutoCaptureEnabled] = useState(true);
+  const [autoCaptureProgress, setAutoCaptureProgress] = useState(0);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const autoReadySinceRef = useRef<number | null>(null);
+  const autoCooldownUntilRef = useRef(0);
+  const autoCapturingRef = useRef(false);
+  const captureFrameRef = useRef<((source?: CaptureSource) => Promise<void>) | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const previews = useMemo(
-    () => files.map((file) => ({ file, url: URL.createObjectURL(file) })),
-    [files],
+  const faceState = useFaceDetector(videoRef, mode === "camera" && !!cameraStream);
+  const activePose = useMemo(
+    () => CAMERA_POSES.find((pose) => pose.key === activePoseKey) ?? CAMERA_POSES[0],
+    [activePoseKey],
+  );
+
+  useEffect(() => {
+    if (mode !== "camera") {
+      return;
+    }
+    const video = videoRef.current;
+    if (!video) return;
+    const update = () =>
+      setVideoSize({ width: video.clientWidth, height: video.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(video);
+    return () => observer.disconnect();
+  }, [mode, cameraStream]);
+
+  const faceQuality = useMemo<FaceQuality>(() => {
+    if (mode !== "camera" || !cameraStream) {
+      return { status: "idle", canCapture: false, message: "Bật camera để bắt đầu." };
+    }
+    if (faceState.loading) {
+      return {
+        status: "loading",
+        canCapture: false,
+        message: "Đang tải mô hình nhận diện...",
+      };
+    }
+    if (faceState.error) {
+      return { status: "error", canCapture: false, message: faceState.error };
+    }
+    if (faceState.faceCount === 0) {
+      return {
+        status: "no-face",
+        canCapture: false,
+        message: "Không thấy khuôn mặt — đưa mặt vào khung.",
+      };
+    }
+    if (faceState.faceCount > 1) {
+      return {
+        status: "multi-face",
+        canCapture: false,
+        message: `Phát hiện ${faceState.faceCount} khuôn mặt — chỉ cần 1 người trong khung.`,
+      };
+    }
+    const box = faceState.boxes[0];
+    if (!box || videoSize.width === 0 || videoSize.height === 0) {
+      return {
+        status: "loading",
+        canCapture: false,
+        message: "Đang khởi tạo camera...",
+      };
+    }
+    const widthRatio = box.width / videoSize.width;
+    if (widthRatio < FACE_MIN_WIDTH_RATIO) {
+      return {
+        status: "small-face",
+        canCapture: false,
+        message: "Mặt hơi nhỏ — tiến gần camera hơn.",
+      };
+    }
+    const centerX = box.x + box.width / 2;
+    const centerY = box.y + box.height / 2;
+    const offsetX = Math.abs(centerX - videoSize.width / 2) / videoSize.width;
+    const offsetY = Math.abs(centerY - videoSize.height / 2) / videoSize.height;
+    if (offsetX > FACE_CENTER_TOLERANCE || offsetY > FACE_CENTER_TOLERANCE) {
+      return {
+        status: "off-center",
+        canCapture: false,
+        message: "Đưa khuôn mặt vào giữa khung hình.",
+      };
+    }
+    const poseMatch = getPoseMatch(activePose.direction, box);
+    if (!poseMatch.matches) {
+      return {
+        status: "wrong-pose",
+        canCapture: false,
+        message: poseMatch.message,
+      };
+    }
+    return { status: "ready", canCapture: true, message: "Giữ yên để hệ thống tự chụp." };
+  }, [activePose.direction, mode, cameraStream, faceState, videoSize]);
+
+  const overlayState =
+    faceQuality.status === "ready"
+      ? "success"
+      : faceQuality.status === "no-face" ||
+          faceQuality.status === "multi-face" ||
+          faceQuality.status === "small-face" ||
+          faceQuality.status === "off-center" ||
+          faceQuality.status === "wrong-pose" ||
+          faceQuality.status === "error"
+        ? "fail"
+        : "idle";
+
+  const uploadPreviews = useMemo(
+    () => uploadFiles.map((file) => ({ file, url: URL.createObjectURL(file) })),
+    [uploadFiles],
+  );
+  const cameraPreviews = useMemo(
+    () =>
+      CAMERA_POSES.map((pose) => {
+        const file = cameraCaptures[pose.key];
+        return {
+          pose,
+          file,
+          url: file ? URL.createObjectURL(file) : null,
+        };
+      }),
+    [cameraCaptures],
+  );
+  const cameraEnrollmentFiles = useMemo(
+    () =>
+      CAMERA_POSES.map((pose) => cameraCaptures[pose.key]).filter(
+        (file): file is File => Boolean(file),
+      ),
+    [cameraCaptures],
+  );
+  const capturedPoseCount = cameraEnrollmentFiles.length;
+  const submitFiles = mode === "camera" ? cameraEnrollmentFiles : uploadFiles;
+  const canSubmit =
+    mode === "camera" ? capturedPoseCount === CAMERA_POSES.length : uploadFiles.length > 0;
+  const activePoseCaptured = Boolean(cameraCaptures[activePoseKey]);
+
+  useEffect(
+    () => () => uploadPreviews.forEach((preview) => URL.revokeObjectURL(preview.url)),
+    [uploadPreviews],
   );
 
   useEffect(
-    () => () => previews.forEach((preview) => URL.revokeObjectURL(preview.url)),
-    [previews],
+    () => () =>
+      cameraPreviews.forEach((preview) => {
+        if (preview.url) URL.revokeObjectURL(preview.url);
+      }),
+    [cameraPreviews],
   );
 
   const stopCamera = useCallback(() => {
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
     cameraStreamRef.current = null;
+    autoReadySinceRef.current = null;
+    autoCooldownUntilRef.current = 0;
+    autoCapturingRef.current = false;
+    setAutoCaptureProgress(0);
     setCameraStream(null);
     if (videoRef.current) {
       videoRef.current.srcObject = null;
@@ -106,7 +309,7 @@ export default function EnrollPage() {
     }
   }, [stopCamera]);
 
-  const captureFrame = useCallback(async () => {
+  const captureFrame = useCallback(async (source: CaptureSource = "manual") => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
 
@@ -115,8 +318,8 @@ export default function EnrollPage() {
       return;
     }
 
-    if (files.length >= MAX_FILES) {
-      setCameraError(`Chỉ được chọn tối đa ${MAX_FILES} ảnh cho một lần enrollment.`);
+    if (!faceQuality.canCapture) {
+      setCameraError(faceQuality.message);
       return;
     }
 
@@ -142,26 +345,42 @@ export default function EnrollPage() {
       return;
     }
 
-    const file = new File([blob], `camera-capture-${formatTimestamp(new Date())}.jpg`, {
+    const file = new File([blob], `camera-${activePoseKey}-${formatTimestamp(new Date())}.jpg`, {
       type: "image/jpeg",
     });
-    setFiles((prev) => [...prev, file].slice(0, MAX_FILES));
+    const nextCaptures = { ...cameraCaptures, [activePoseKey]: file };
+    const nextPose = CAMERA_POSES.find((pose) => !nextCaptures[pose.key]);
+    setCameraCaptures(nextCaptures);
+    setActivePoseKey(nextPose?.key ?? activePoseKey);
     setCameraError(null);
     notifications.show({
-      color: "teal",
-      message: "Đã chụp ảnh từ camera.",
+      color: source === "auto" ? "blue" : "teal",
+      message:
+        source === "auto"
+          ? `Tự động chụp ${activePose.label}.`
+          : `Đã chụp tư thế ${activePose.label}.`,
     });
-  }, [files.length]);
+  }, [activePose.label, activePoseKey, cameraCaptures, faceQuality]);
+
+  useEffect(() => {
+    captureFrameRef.current = captureFrame;
+  }, [captureFrame]);
 
   const handleModeChange = useCallback(
     (value: string) => {
       const nextMode = value as EnrollMode;
+      autoReadySinceRef.current = null;
+      autoCooldownUntilRef.current = 0;
+      setAutoCaptureProgress(0);
       if (nextMode !== "camera") {
         stopCamera();
+      } else {
+        const nextPose = CAMERA_POSES.find((pose) => !cameraCaptures[pose.key]);
+        setActivePoseKey(nextPose?.key ?? CAMERA_POSES[0].key);
       }
       setMode(nextMode);
     },
-    [stopCamera],
+    [cameraCaptures, stopCamera],
   );
 
   useEffect(
@@ -186,7 +405,7 @@ export default function EnrollPage() {
   });
 
   const submitMutation = useMutation({
-    mutationFn: () => createEnrollment(Number(id), files),
+    mutationFn: () => createEnrollment(Number(id), submitFiles),
     onSuccess(data) {
       setJobId(data.job_id);
       stopCamera();
@@ -196,13 +415,72 @@ export default function EnrollPage() {
       });
     },
     onError(err: AxiosError<{ detail?: string }>) {
+      const isDuplicateFace = err.response?.status === 409;
       notifications.show({
-        color: "red",
-        title: "Upload thất bại",
+        color: isDuplicateFace ? "orange" : "red",
+        title: isDuplicateFace
+          ? "Khuôn mặt đã đăng ký cho người khác"
+          : "Upload thất bại",
         message: err.response?.data?.detail ?? "Có lỗi xảy ra, vui lòng thử lại.",
       });
     },
   });
+
+  useEffect(() => {
+    if (
+      mode !== "camera" ||
+      !cameraStream ||
+      !autoCaptureEnabled ||
+      activePoseCaptured ||
+      !faceQuality.canCapture ||
+      submitMutation.isPending
+    ) {
+      autoReadySinceRef.current = null;
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      const now = Date.now();
+      if (now < autoCooldownUntilRef.current || autoCapturingRef.current) {
+        return;
+      }
+
+      if (autoReadySinceRef.current === null) {
+        autoReadySinceRef.current = now;
+        setAutoCaptureProgress(0);
+      }
+
+      const progress = Math.min((now - autoReadySinceRef.current) / AUTO_CAPTURE_HOLD_MS, 1);
+      setAutoCaptureProgress(Math.round(progress * 100));
+
+      if (progress < 1) {
+        return;
+      }
+
+      const capture = captureFrameRef.current;
+      if (!capture) {
+        return;
+      }
+
+      autoCapturingRef.current = true;
+      autoCooldownUntilRef.current = now + AUTO_CAPTURE_COOLDOWN_MS;
+      void capture("auto").finally(() => {
+        autoCapturingRef.current = false;
+        autoReadySinceRef.current = null;
+        setAutoCaptureProgress(0);
+      });
+    }, AUTO_CAPTURE_TICK_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [
+    activePoseCaptured,
+    activePoseKey,
+    autoCaptureEnabled,
+    cameraStream,
+    faceQuality.canCapture,
+    mode,
+    submitMutation.isPending,
+  ]);
 
   const isDone = jobStatus?.status === "success" || jobStatus?.status === "failed";
   const statusColor =
@@ -213,6 +491,8 @@ export default function EnrollPage() {
       : jobStatus?.status === "failed"
         ? "Thất bại"
         : "Đang xử lý";
+  const visibleAutoCaptureProgress =
+    autoCaptureEnabled && faceQuality.canCapture && !activePoseCaptured ? autoCaptureProgress : 0;
 
   if (!canMutate) {
     return (
@@ -252,8 +532,8 @@ export default function EnrollPage() {
         >
           <Stack gap="lg">
             <Text size="sm" c="var(--text-secondary)">
-              Chọn 1-5 ảnh chân dung rõ nét hoặc chụp trực tiếp bằng camera. Ảnh tốt nhất: mặt
-              thẳng, đủ ánh sáng, chỉ một người trong khung.
+              Chọn 1-5 ảnh chân dung rõ nét hoặc bật camera để hệ thống tự chụp lần lượt
+              các góc nhìn thẳng, trái và phải. Ảnh tốt nhất: mặt đủ sáng, chỉ một người trong khung.
             </Text>
 
             <SegmentedControl
@@ -269,7 +549,9 @@ export default function EnrollPage() {
 
             {mode === "upload" && (
               <Dropzone
-                onDrop={(dropped) => setFiles((prev) => [...prev, ...dropped].slice(0, MAX_FILES))}
+                onDrop={(dropped) =>
+                  setUploadFiles((prev) => [...prev, ...dropped].slice(0, MAX_FILES))
+                }
                 onReject={() =>
                   notifications.show({
                     color: "red",
@@ -278,14 +560,14 @@ export default function EnrollPage() {
                 }
                 maxSize={MAX_SIZE_BYTES}
                 accept={IMAGE_MIME_TYPE}
-                maxFiles={Math.max(MAX_FILES - files.length, 0)}
-                disabled={files.length >= MAX_FILES}
+                maxFiles={Math.max(MAX_FILES - uploadFiles.length, 0)}
+                disabled={uploadFiles.length >= MAX_FILES}
                 radius="xl"
                 p="xl"
                 style={{
                   border: "1px dashed rgba(124,92,255,0.45)",
                   background: "rgba(124,92,255,0.045)",
-                  boxShadow: files.length ? "0 0 34px rgba(124,92,255,0.1)" : "none",
+                  boxShadow: uploadFiles.length ? "0 0 34px rgba(124,92,255,0.1)" : "none",
                 }}
               >
                 <Stack align="center" gap="sm" py="lg" style={{ pointerEvents: "none" }}>
@@ -296,7 +578,7 @@ export default function EnrollPage() {
                     Kéo thả ảnh vào đây, hoặc click để chọn
                   </Text>
                   <Text size="xs" c="var(--text-muted)">
-                    {files.length}/{MAX_FILES} ảnh đã chọn - JPEG/PNG - tối đa 5MB/ảnh
+                    {uploadFiles.length}/{MAX_FILES} ảnh đã chọn - JPEG/PNG - tối đa 5MB/ảnh
                   </Text>
                 </Stack>
               </Dropzone>
@@ -304,6 +586,63 @@ export default function EnrollPage() {
 
             {mode === "camera" && (
               <Stack gap="md">
+                <Box
+                  p="md"
+                  style={{
+                    border: "1px solid rgba(124,92,255,0.32)",
+                    borderRadius: 16,
+                    background: "rgba(124,92,255,0.07)",
+                  }}
+                >
+                  <Group justify="space-between" align="flex-start" gap="md">
+                    <Stack gap={4} style={{ flex: 1 }}>
+                      <Text size="xs" c="var(--text-muted)" className="mono">
+                        Đã chụp {capturedPoseCount}/{CAMERA_POSES.length} tư thế
+                      </Text>
+                      <Text fw={800}>{activePose.label}</Text>
+                      <Text size="sm" c="var(--text-secondary)">
+                        {activePose.instruction}
+                      </Text>
+                    </Stack>
+                    <Stack gap="xs" align="flex-end">
+                      <Badge color={activePoseCaptured ? "teal" : "brand"} variant="light">
+                        {activePoseCaptured
+                          ? "Đã chụp"
+                          : autoCaptureEnabled
+                            ? "Tự chụp"
+                            : "Thủ công"}
+                      </Badge>
+                      <Switch
+                        size="xs"
+                        checked={autoCaptureEnabled}
+                        disabled={!cameraStream}
+                        onChange={(event) => {
+                          autoReadySinceRef.current = null;
+                          setAutoCaptureProgress(0);
+                          setAutoCaptureEnabled(event.currentTarget.checked);
+                        }}
+                        label="Tự động"
+                      />
+                    </Stack>
+                  </Group>
+                  <Progress
+                    value={(capturedPoseCount / CAMERA_POSES.length) * 100}
+                    color="brand"
+                    radius="xl"
+                    mt="md"
+                  />
+                  {cameraStream && !activePoseCaptured && (
+                    <Progress
+                      value={visibleAutoCaptureProgress}
+                      color={faceQuality.canCapture ? "teal" : "brand"}
+                      radius="xl"
+                      mt="xs"
+                      striped={faceQuality.canCapture}
+                      animated={faceQuality.canCapture}
+                    />
+                  )}
+                </Box>
+
                 <Box
                   style={{
                     position: "relative",
@@ -344,8 +683,75 @@ export default function EnrollPage() {
                       </Text>
                     </Stack>
                   )}
+                  {cameraStream && videoSize.width > 0 && videoSize.height > 0 && (
+                    <Box
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        pointerEvents: "none",
+                      }}
+                    >
+                      <FaceBboxOverlay
+                        boxes={faceState.boxes}
+                        state={overlayState}
+                        width={videoSize.width}
+                        height={videoSize.height}
+                      />
+                    </Box>
+                  )}
+                  {cameraStream && (
+                    <Box
+                      className={`enroll-pose-cue ${faceQuality.canCapture ? "ready" : ""}`}
+                    >
+                      <ThemeIcon
+                        size={44}
+                        radius={16}
+                        variant="light"
+                        color={faceQuality.canCapture ? "teal" : "brand"}
+                      >
+                        <PoseCueIcon poseKey={activePoseKey} />
+                      </ThemeIcon>
+                      <Stack gap={2} style={{ minWidth: 0 }}>
+                        <Text fw={800} size="sm" c="var(--text-primary)">
+                          {activePose.cue}
+                        </Text>
+                        <Text size="xs" c="var(--text-secondary)" lineClamp={2}>
+                          {activePoseCaptured
+                            ? "Tư thế này đã có ảnh. Chọn tư thế khác hoặc gửi enrollment."
+                            : faceQuality.canCapture
+                              ? "Giữ yên, hệ thống đang tự chụp..."
+                              : faceQuality.message}
+                        </Text>
+                      </Stack>
+                    </Box>
+                  )}
                 </Box>
                 <canvas ref={canvasRef} style={{ display: "none" }} />
+
+                {cameraStream && (
+                  <Group
+                    gap="xs"
+                    align="center"
+                    data-testid="face-quality-status"
+                    data-status={faceQuality.status}
+                  >
+                    <Badge
+                      color={
+                        faceQuality.status === "ready"
+                          ? "teal"
+                          : faceQuality.status === "loading" || faceQuality.status === "idle"
+                            ? "gray"
+                            : "yellow"
+                      }
+                      variant="light"
+                    >
+                      {faceQuality.status === "ready" ? "Đạt" : "Chưa đạt"}
+                    </Badge>
+                    <Text size="sm" c="var(--text-secondary)">
+                      {faceQuality.message}
+                    </Text>
+                  </Group>
+                )}
 
                 {cameraError && (
                   <Alert color="red" variant="light" title="Camera không sẵn sàng">
@@ -355,7 +761,7 @@ export default function EnrollPage() {
 
                 <Group justify="space-between" align="center">
                   <Text size="xs" c="var(--text-muted)">
-                    {files.length}/{MAX_FILES} ảnh đã chọn
+                    Tự chụp khi mặt đúng hướng, đủ lớn và giữ ổn định trong khung.
                   </Text>
                   <Group gap="sm">
                     {cameraStream ? (
@@ -377,19 +783,77 @@ export default function EnrollPage() {
                     )}
                     <Button
                       leftSection={<IconPhoto size={17} />}
-                      disabled={!cameraStream || files.length >= MAX_FILES}
+                      disabled={!cameraStream || !faceQuality.canCapture}
                       onClick={() => void captureFrame()}
+                      data-testid="capture-button"
                     >
-                      Chụp ảnh
+                      {cameraCaptures[activePoseKey] ? "Chụp lại" : "Chụp thủ công"}
                     </Button>
                   </Group>
                 </Group>
+
+                <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+                  {cameraPreviews.map(({ pose, file, url }) => {
+                    const isActive = pose.key === activePoseKey;
+
+                    return (
+                      <Stack
+                        key={pose.key}
+                        gap="xs"
+                        p="xs"
+                        style={{
+                          border: isActive
+                            ? "1px solid rgba(124,92,255,0.72)"
+                            : "1px solid var(--border-subtle)",
+                          borderRadius: 14,
+                          background: isActive
+                            ? "rgba(124,92,255,0.12)"
+                            : "rgba(255,255,255,0.025)",
+                        }}
+                      >
+                        {url ? (
+                          <Image
+                            src={url}
+                            alt={pose.label}
+                            h={74}
+                            radius="md"
+                            fit="cover"
+                          />
+                        ) : (
+                          <Stack
+                            align="center"
+                            justify="center"
+                            h={74}
+                            style={{
+                              borderRadius: 10,
+                              background: "rgba(255,255,255,0.035)",
+                            }}
+                          >
+                            <IconPhoto size={20} color="var(--text-muted)" />
+                          </Stack>
+                        )}
+                        <Text size="xs" fw={700} ta="center" lineClamp={1}>
+                          {pose.label}
+                        </Text>
+                        <Button
+                          size="xs"
+                          variant={isActive ? "filled" : "light"}
+                          color={file ? "teal" : "brand"}
+                          leftSection={file ? <IconRefresh size={14} /> : undefined}
+                          onClick={() => setActivePoseKey(pose.key)}
+                        >
+                          {file ? "Chụp lại" : "Chọn"}
+                        </Button>
+                      </Stack>
+                    );
+                  })}
+                </SimpleGrid>
               </Stack>
             )}
 
-            {previews.length > 0 && (
+            {mode === "upload" && uploadPreviews.length > 0 && (
               <Stack gap="sm">
-                {previews.map((preview, index) => (
+                {uploadPreviews.map((preview, index) => (
                   <Group
                     key={`${preview.file.name}-${index}`}
                     justify="space-between"
@@ -424,7 +888,9 @@ export default function EnrollPage() {
                       <ActionIcon
                         color="red"
                         aria-label="Xóa ảnh"
-                        onClick={() => setFiles((prev) => prev.filter((_, i) => i !== index))}
+                        onClick={() =>
+                          setUploadFiles((prev) => prev.filter((_, i) => i !== index))
+                        }
                       >
                         <IconTrash size={17} />
                       </ActionIcon>
@@ -439,12 +905,14 @@ export default function EnrollPage() {
                 Hủy
               </Button>
               <Button
-                disabled={files.length === 0}
+                disabled={!canSubmit}
                 loading={submitMutation.isPending}
                 onClick={() => submitMutation.mutate()}
                 leftSection={<IconSparkles size={17} />}
               >
-                Upload và Enroll ({files.length} ảnh)
+                {mode === "camera"
+                  ? `Upload và Enroll (${capturedPoseCount}/${CAMERA_POSES.length} tư thế)`
+                  : `Upload và Enroll (${uploadFiles.length} ảnh)`}
               </Button>
             </Group>
           </Stack>
@@ -534,6 +1002,85 @@ export default function EnrollPage() {
       )}
     </Stack>
   );
+}
+
+function PoseCueIcon({ poseKey }: { poseKey: CameraPoseKey }) {
+  if (poseKey === "left") {
+    return <IconArrowLeft size={23} stroke={1.8} />;
+  }
+
+  if (poseKey === "right") {
+    return <IconArrowRight size={23} stroke={1.8} />;
+  }
+
+  return <IconCamera size={23} stroke={1.8} />;
+}
+
+function getPoseMatch(direction: FacePoseDirection, box: FaceBbox) {
+  const yaw = estimateFaceYaw(box);
+
+  if (yaw === null) {
+    return {
+      matches: direction === "front",
+      message:
+        direction === "front"
+          ? "Giữ mặt rõ hơn trong khung."
+          : "Giữ mặt rõ và quay chậm để camera đọc được hướng mặt.",
+    };
+  }
+
+  if (direction === "front") {
+    const matches = Math.abs(yaw) <= FACE_YAW_FRONT_TOLERANCE;
+    return {
+      matches,
+      message: matches ? "Giữ yên." : "Nhìn thẳng lại camera.",
+    };
+  }
+
+  if (direction === "left") {
+    const matches = yaw <= -FACE_YAW_TURN_THRESHOLD;
+    return {
+      matches,
+      message: matches ? "Giữ yên." : "Quay mặt thêm sang trái.",
+    };
+  }
+
+  const matches = yaw >= FACE_YAW_TURN_THRESHOLD;
+  return {
+    matches,
+    message: matches ? "Giữ yên." : "Quay mặt thêm sang phải.",
+  };
+}
+
+function estimateFaceYaw(box: FaceBbox) {
+  const nose = pickFaceKeypoint(box, ["nose", "nosetip"], 2);
+  if (!nose || box.width <= 0) {
+    return null;
+  }
+
+  const rightEye = pickFaceKeypoint(box, ["righteye"], 0);
+  const leftEye = pickFaceKeypoint(box, ["lefteye"], 1);
+  const anchorX =
+    rightEye && leftEye ? (rightEye.x + leftEye.x) / 2 : box.x + box.width / 2;
+
+  return (nose.x - anchorX) / box.width;
+}
+
+function pickFaceKeypoint(
+  box: FaceBbox,
+  labelFragments: string[],
+  fallbackIndex: number,
+) {
+  const byLabel = box.keypoints.find((keypoint) => {
+    const label = normalizeKeypointLabel(keypoint.label);
+    return labelFragments.some((fragment) => label.includes(fragment));
+  });
+
+  return byLabel ?? box.keypoints[fallbackIndex] ?? null;
+}
+
+function normalizeKeypointLabel(label: string | undefined) {
+  return label?.toLowerCase().replace(/[\s_-]/g, "") ?? "";
 }
 
 function formatTimestamp(date: Date) {

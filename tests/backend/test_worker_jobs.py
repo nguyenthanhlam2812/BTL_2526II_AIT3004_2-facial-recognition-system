@@ -7,8 +7,12 @@ from backend.app.models.employee import Employee
 from backend.app.models.enrollment import Enrollment
 from backend.app.models.enrollment_image import EnrollmentImage
 from backend.app.services.minio_service import ObjectStorageError
-from backend.app.services.qdrant_service import VectorStoreError
+from backend.app.services.qdrant_service import FaceSearchResult, VectorStoreError
 from worker.app import jobs as worker_jobs
+
+
+def _no_duplicate(**_kwargs):
+    return None
 
 
 def seed_enrollment(db_session) -> Enrollment:
@@ -88,6 +92,7 @@ def test_process_enrollment_job_marks_images_success_when_indexing_succeeds(
             "embedding": [0.1] * 512,
         },
     )
+    monkeypatch.setattr(worker_jobs, "find_duplicate_face_owner", _no_duplicate)
     monkeypatch.setattr(
         worker_jobs,
         "upsert_face_embedding",
@@ -136,6 +141,7 @@ def test_process_enrollment_job_retries_when_qdrant_upsert_fails(
             "embedding": [0.1] * 512,
         },
     )
+    monkeypatch.setattr(worker_jobs, "find_duplicate_face_owner", _no_duplicate)
 
     def fake_upsert(**kwargs):
         raise VectorStoreError("Cannot upsert embedding to Qdrant.")
@@ -237,6 +243,217 @@ def test_process_enrollment_job_retries_when_download_fails(
         assert image.processing_status == "pending"
         assert image.qdrant_point_id is None
         assert image.error_message is None
+
+
+def test_process_enrollment_job_rejects_when_duplicate_face_detected(
+    db_session,
+    monkeypatch,
+):
+    enrollment = seed_enrollment(db_session)
+
+    monkeypatch.setattr(worker_jobs, "SessionLocal", lambda: db_session)
+    monkeypatch.setattr(
+        worker_jobs,
+        "download_object_bytes",
+        lambda bucket_name, object_key: b"fake-image-bytes",
+    )
+    monkeypatch.setattr(
+        worker_jobs,
+        "analyze_image_bytes",
+        lambda image_bytes: {
+            "status": "success",
+            "embedding": [0.1] * 512,
+        },
+    )
+
+    monkeypatch.setattr(
+        worker_jobs,
+        "find_duplicate_face_owner",
+        lambda **kwargs: FaceSearchResult(
+            employee_id=999,
+            score=0.91,
+            payload={"employee_id": 999},
+            point_id=42,
+        ),
+    )
+
+    upsert_calls: list[dict] = []
+    monkeypatch.setattr(
+        worker_jobs,
+        "upsert_face_embedding",
+        lambda **kwargs: upsert_calls.append(kwargs) or f"point-{kwargs['enrollment_image_id']}",
+    )
+
+    deleted_ids: list[list] = []
+    monkeypatch.setattr(
+        worker_jobs,
+        "delete_face_embeddings",
+        lambda point_ids: deleted_ids.append(list(point_ids)),
+    )
+
+    result = worker_jobs.process_enrollment_job(
+        {"job_id": enrollment.job_id, "bucket_name": "enrollments"}
+    )
+
+    db_session.expire_all()
+    updated = db_session.scalar(
+        select(Enrollment).where(Enrollment.id == enrollment.id)
+    )
+
+    assert result["status"] == "failed"
+    assert "đăng ký cho nhân viên #999" in result["message"]
+    assert updated is not None
+    assert updated.status == "failed"
+    assert updated.processed_count == 0
+    assert updated.failed_count == 2
+
+    for image in updated.images:
+        assert image.processing_status == "failed"
+        assert image.qdrant_point_id is None
+        assert "đăng ký cho nhân viên #999" in (image.error_message or "")
+
+    # The first image's duplicate check fires before any upsert, so we never
+    # call upsert and rollback is a no-op (no points to delete).
+    assert upsert_calls == []
+    assert deleted_ids == []
+
+
+def test_process_enrollment_job_rolls_back_prior_upsert_when_later_image_is_duplicate(
+    db_session,
+    monkeypatch,
+):
+    enrollment = seed_enrollment(db_session)
+
+    monkeypatch.setattr(worker_jobs, "SessionLocal", lambda: db_session)
+    monkeypatch.setattr(
+        worker_jobs,
+        "download_object_bytes",
+        lambda bucket_name, object_key: b"fake-image-bytes",
+    )
+    monkeypatch.setattr(
+        worker_jobs,
+        "analyze_image_bytes",
+        lambda image_bytes: {
+            "status": "success",
+            "embedding": [0.1] * 512,
+        },
+    )
+
+    # First image clears the duplicate check; second image trips it.
+    duplicate_responses = iter(
+        [
+            None,
+            FaceSearchResult(
+                employee_id=999,
+                score=0.88,
+                payload={"employee_id": 999},
+                point_id=77,
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        worker_jobs,
+        "find_duplicate_face_owner",
+        lambda **kwargs: next(duplicate_responses),
+    )
+
+    monkeypatch.setattr(
+        worker_jobs,
+        "upsert_face_embedding",
+        lambda **kwargs: f"point-{kwargs['enrollment_image_id']}",
+    )
+
+    deleted_ids: list[list] = []
+    monkeypatch.setattr(
+        worker_jobs,
+        "delete_face_embeddings",
+        lambda point_ids: deleted_ids.append(list(point_ids)),
+    )
+
+    first_image_id = enrollment.images[0].id
+
+    result = worker_jobs.process_enrollment_job(
+        {"job_id": enrollment.job_id, "bucket_name": "enrollments"}
+    )
+
+    db_session.expire_all()
+    updated = db_session.scalar(
+        select(Enrollment).where(Enrollment.id == enrollment.id)
+    )
+
+    assert result["status"] == "failed"
+    assert updated is not None
+    assert updated.status == "failed"
+    assert updated.processed_count == 0
+    assert updated.failed_count == 2
+
+    for image in updated.images:
+        assert image.processing_status == "failed"
+        assert image.qdrant_point_id is None
+
+    assert deleted_ids == [[first_image_id]]
+
+
+def test_process_enrollment_job_allows_same_employee_when_no_other_match(
+    db_session,
+    monkeypatch,
+):
+    enrollment = seed_enrollment(db_session)
+
+    monkeypatch.setattr(worker_jobs, "SessionLocal", lambda: db_session)
+    monkeypatch.setattr(
+        worker_jobs,
+        "download_object_bytes",
+        lambda bucket_name, object_key: b"fake-image-bytes",
+    )
+    monkeypatch.setattr(
+        worker_jobs,
+        "analyze_image_bytes",
+        lambda image_bytes: {
+            "status": "success",
+            "embedding": [0.1] * 512,
+        },
+    )
+
+    # find_duplicate_face_owner returning None means "all top neighbours were
+    # either this employee or below threshold" — re-enrollment must succeed.
+    captured_excludes: list[int] = []
+
+    def fake_find_duplicate(**kwargs):
+        captured_excludes.append(kwargs["exclude_employee_id"])
+        return None
+
+    monkeypatch.setattr(worker_jobs, "find_duplicate_face_owner", fake_find_duplicate)
+
+    monkeypatch.setattr(
+        worker_jobs,
+        "upsert_face_embedding",
+        lambda **kwargs: f"point-{kwargs['enrollment_image_id']}",
+    )
+
+    monkeypatch.setattr(
+        worker_jobs,
+        "delete_face_embeddings",
+        lambda point_ids: (_ for _ in ()).throw(
+            AssertionError("rollback should not run on success path")
+        ),
+    )
+
+    result = worker_jobs.process_enrollment_job(
+        {"job_id": enrollment.job_id, "bucket_name": "enrollments"}
+    )
+
+    db_session.expire_all()
+    updated = db_session.scalar(
+        select(Enrollment).where(Enrollment.id == enrollment.id)
+    )
+
+    assert result["status"] == "success"
+    assert updated is not None
+    assert updated.status == "success"
+    assert updated.processed_count == 2
+    assert updated.failed_count == 0
+    assert captured_excludes == [enrollment.employee_id, enrollment.employee_id]
 
 
 def test_mark_enrollment_job_failed_after_retries_marks_pending_images_failed(

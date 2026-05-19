@@ -60,7 +60,7 @@ def upsert_face_embedding(
 ) -> str:
     client = get_qdrant_client()
     collection_name = ensure_collection_exists()
-    point_id = f"enrollment-image-{enrollment_image_id}"
+    point_id = enrollment_image_id
 
     try:
         client.upsert(
@@ -82,7 +82,7 @@ def upsert_face_embedding(
     except Exception as exc:
         raise VectorStoreError("Cannot upsert embedding to Qdrant.") from exc
 
-    return point_id
+    return str(point_id)
 
 
 def search_face_embedding(
@@ -127,3 +127,44 @@ def _build_face_search_result(point) -> FaceSearchResult:
         payload=payload,
         point_id=point.id,
     )
+
+
+def delete_face_embeddings(point_ids: list[str | int]) -> None:
+    if not point_ids:
+        return
+
+    client = get_qdrant_client()
+    collection_name = ensure_collection_exists()
+
+    try:
+        client.delete(
+            collection_name=collection_name,
+            points_selector=list(point_ids),
+            wait=True,
+        )
+    except Exception as exc:
+        raise VectorStoreError("Cannot delete embeddings from Qdrant.") from exc
+
+
+def find_duplicate_face_owner(
+    *,
+    embedding: list[float],
+    exclude_employee_id: int,
+    threshold: float,
+    limit: int = 10,
+) -> FaceSearchResult | None:
+    """Return the highest-scoring match owned by a different employee, or None.
+
+    Scans the top-`limit` neighbours to avoid being shadowed by many points
+    belonging to `exclude_employee_id`.
+    """
+    candidates = search_face_embeddings(embedding=embedding, limit=limit)
+    for candidate in candidates:
+        if candidate.employee_id is None:
+            continue
+        if candidate.employee_id == exclude_employee_id:
+            continue
+        if candidate.score < threshold:
+            return None
+        return candidate
+    return None
