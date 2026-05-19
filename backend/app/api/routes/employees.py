@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.deps import require_admin, require_operator
 from backend.app.db.session import get_db
+from backend.app.models.employee import Employee
 from backend.app.models.user import User
 from backend.app.schemas.employee import (
     DeleteResponse,
@@ -19,6 +20,7 @@ from backend.app.services.employee_service import (
     list_employees as list_employees_service,
     update_employee as update_employee_service,
 )
+from backend.app.services.audit_log_service import record_audit_log
 
 
 router = APIRouter(prefix="/employees", tags=["employees"])
@@ -55,15 +57,29 @@ def list_departments(
 def create_employee(
     payload: EmployeeCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_operator),
+    current_user: User = Depends(require_operator),
 ) -> EmployeeRead:
     try:
-        return create_employee_service(db, payload)
+        employee = create_employee_service(db, payload)
     except DuplicateEmployeeCodeError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Employee code already exists.",
         ) from exc
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="employee.create",
+        resource_type="employee",
+        resource_id=employee.id,
+        resource_label=f"{employee.employee_code} - {employee.full_name}",
+        metadata={
+            "employee_code": employee.employee_code,
+            "department": employee.department,
+            "status": employee.status,
+        },
+    )
+    return employee
 
 
 @router.put("/{employee_id}", response_model=EmployeeRead)
@@ -71,7 +87,7 @@ def update_employee(
     employee_id: int,
     payload: EmployeeUpdate,
     db: Session = Depends(get_db),
-    _: User = Depends(require_operator),
+    current_user: User = Depends(require_operator),
 ) -> EmployeeRead:
     try:
         employee = update_employee_service(db, employee_id, payload)
@@ -87,6 +103,19 @@ def update_employee(
             detail="Employee not found.",
         )
 
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="employee.update",
+        resource_type="employee",
+        resource_id=employee.id,
+        resource_label=f"{employee.employee_code} - {employee.full_name}",
+        metadata={
+            "employee_code": employee.employee_code,
+            "department": employee.department,
+            "status": employee.status,
+        },
+    )
     return employee
 
 
@@ -94,8 +123,13 @@ def update_employee(
 def delete_employee(
     employee_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(require_operator),
+    current_user: User = Depends(require_operator),
 ) -> DeleteResponse:
+    target = db.get(Employee, employee_id)
+    target_label = (
+        f"{target.employee_code} - {target.full_name}" if target is not None else None
+    )
+    target_code = target.employee_code if target is not None else None
     deleted = delete_employee_service(db, employee_id)
     if not deleted:
         raise HTTPException(
@@ -103,4 +137,13 @@ def delete_employee(
             detail="Employee not found.",
         )
 
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="employee.delete",
+        resource_type="employee",
+        resource_id=employee_id,
+        resource_label=target_label,
+        metadata={"employee_code": target_code},
+    )
     return DeleteResponse(ok=True)

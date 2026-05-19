@@ -235,3 +235,22 @@ export interface SystemSettingsUpdate {
 export interface SystemSettingsResetRequest {
   keys?: string[] | null;
 }
+
+// --- Audit logs ---
+export interface AuditLog {
+  id: number;
+  actor_user_id: number | null;
+  actor_username: string | null;
+  actor_role: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  resource_label: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AuditLogListResponse {
+  items: AuditLog[];
+  total: number;
+}

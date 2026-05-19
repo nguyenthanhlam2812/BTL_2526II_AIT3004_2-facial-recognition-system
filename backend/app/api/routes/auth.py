@@ -13,6 +13,7 @@ from backend.app.schemas.auth import (
     LoginResponse,
 )
 from backend.app.services.auth_service import authenticate_user, change_user_password
+from backend.app.services.audit_log_service import record_audit_log
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -56,6 +57,14 @@ def change_password(
             detail="Current password is incorrect.",
         )
 
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="auth.change_password",
+        resource_type="auth",
+        resource_id=current_user.id,
+        resource_label=current_user.username,
+    )
     return ChangePasswordResponse(
         ok=True,
         message="Password updated successfully.",

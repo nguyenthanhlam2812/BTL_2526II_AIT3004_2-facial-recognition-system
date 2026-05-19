@@ -17,6 +17,7 @@ from backend.app.services.enrollment_service import (
     create_enrollment as create_enrollment_service,
     get_enrollment_by_job_id,
 )
+from backend.app.services.audit_log_service import record_audit_log
 
 router = APIRouter(tags=["enrollments"])
 
@@ -30,7 +31,7 @@ def create_enrollment(
     employee_id: int,
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    _: User = Depends(require_operator),
+    current_user: User = Depends(require_operator),
 ) -> EnrollmentCreateResponse:
     for upload in files:
         ensure_image_mime(upload.content_type)
@@ -60,6 +61,19 @@ def create_enrollment(
             detail=str(exc),
         ) from exc
 
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="enrollment.submit",
+        resource_type="enrollment",
+        resource_id=enrollment.id,
+        resource_label=enrollment.job_id,
+        metadata={
+            "job_id": enrollment.job_id,
+            "employee_id": enrollment.employee_id,
+            "uploaded_count": enrollment.uploaded_count,
+        },
+    )
     return enrollment
 
 

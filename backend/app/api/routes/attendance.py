@@ -41,6 +41,7 @@ from backend.app.services.attendance_service import (
     list_attendance_events as list_attendance_events_service,
     recognize_attendance_frame as recognize_attendance_frame_service,
 )
+from backend.app.services.audit_log_service import record_audit_log
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 
@@ -214,16 +215,36 @@ def export_attendance_events_csv(
 def delete_selected_attendance_events(
     payload: AttendanceEventsBulkDeleteRequest,
     db: Session = Depends(get_db),
-    _: User = Depends(require_operator),
+    current_user: User = Depends(require_operator),
 ) -> AttendanceEventsDeleteResponse:
     deleted_count = delete_attendance_events_by_ids_service(db, payload.ids)
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="attendance_event.delete_selected",
+        resource_type="attendance_event",
+        resource_label="selected events",
+        metadata={
+            "deleted_count": deleted_count,
+            "requested_count": len(payload.ids),
+            "event_ids": payload.ids[:50],
+        },
+    )
     return AttendanceEventsDeleteResponse(ok=True, deleted_count=deleted_count)
 
 
 @router.delete("/events", response_model=AttendanceEventsDeleteResponse)
 def delete_attendance_events(
     db: Session = Depends(get_db),
-    _: User = Depends(require_operator),
+    current_user: User = Depends(require_operator),
 ) -> AttendanceEventsDeleteResponse:
     deleted_count = delete_attendance_events_service(db)
+    record_audit_log(
+        db,
+        actor=current_user,
+        action="attendance_event.delete_all",
+        resource_type="attendance_event",
+        resource_label="all events",
+        metadata={"deleted_count": deleted_count},
+    )
     return AttendanceEventsDeleteResponse(ok=True, deleted_count=deleted_count)
