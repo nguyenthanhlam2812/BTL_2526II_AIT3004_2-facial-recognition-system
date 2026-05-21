@@ -94,8 +94,8 @@ def test_employee_and_system_setting_actions_create_audit_logs(client):
         json={
             "employee_code": "EMP0001",
             "full_name": "Nguyen Van A",
-            "department": "IT",
-            "position": "Engineer",
+            "department": "Software Engineering",
+            "position": "Software Engineer",
             "status": "active",
         },
     )
@@ -107,8 +107,8 @@ def test_employee_and_system_setting_actions_create_audit_logs(client):
         json={
             "employee_code": "EMP0001",
             "full_name": "Nguyen Van A",
-            "department": "HR",
-            "position": "Engineer",
+            "department": "Cybersecurity",
+            "position": "Software Engineer",
             "status": "inactive",
         },
     )
@@ -139,7 +139,7 @@ def test_employee_and_system_setting_actions_create_audit_logs(client):
 
     employee_log = next(item for item in logs if item["action"] == "employee.update")
     assert employee_log["resource_id"] == str(employee["id"])
-    assert employee_log["metadata"]["department"] == "HR"
+    assert employee_log["metadata"]["department"] == "Cybersecurity"
 
     settings_log = next(item for item in logs if item["action"] == "system_setting.update")
     assert settings_log["metadata"]["keys"] == ["attendance_threshold", "business_timezone"]

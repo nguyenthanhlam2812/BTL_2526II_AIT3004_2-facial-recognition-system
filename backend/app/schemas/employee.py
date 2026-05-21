@@ -19,6 +19,8 @@ class EmployeeBase(BaseModel):
     position: str = Field(min_length=2, max_length=64)
     status: EmployeeStatus = "active"
 
+
+class EmployeeInput(EmployeeBase):
     @field_validator("employee_code", mode="before")
     @classmethod
     def validate_employee_code(cls, value: str) -> str:
@@ -55,11 +57,11 @@ class EmployeeBase(BaseModel):
         )
 
 
-class EmployeeCreate(EmployeeBase):
+class EmployeeCreate(EmployeeInput):
     pass
 
 
-class EmployeeUpdate(EmployeeBase):
+class EmployeeUpdate(EmployeeInput):
     pass
 
 

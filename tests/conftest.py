@@ -22,6 +22,9 @@ from backend.app.api.deps import (
 from backend.app.config import get_settings
 from backend.app.db.base import Base
 from backend.app.db.session import get_db
+from backend.app.default_lookups import DEFAULT_DEPARTMENTS, DEFAULT_POSITIONS
+from backend.app.models.department import Department
+from backend.app.models.position import Position
 from backend.app.main import app
 from backend.app.models.user import User
 from backend.app.services import attendance_service, camera_gate_service
@@ -60,6 +63,7 @@ def db_session():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
+    _seed_default_lookups(db)
     try:
         yield db
     finally:
@@ -126,3 +130,11 @@ def _reset_rate_limits():
     reset = getattr(storage, "reset", None)
     if callable(reset):
         reset()
+
+
+def _seed_default_lookups(db: Session) -> None:
+    db.add_all(
+        [Department(name=name) for name in DEFAULT_DEPARTMENTS]
+        + [Position(name=name) for name in DEFAULT_POSITIONS]
+    )
+    db.commit()

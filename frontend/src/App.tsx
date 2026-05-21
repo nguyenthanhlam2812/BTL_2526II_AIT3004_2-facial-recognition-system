@@ -8,6 +8,7 @@ import EnrollPage from "@/routes/admin/EnrollPage";
 import AttendancePage from "@/routes/admin/AttendancePage";
 import ReportsPage from "@/routes/admin/ReportsPage";
 import AuditPage from "@/routes/admin/AuditPage";
+import LookupsPage from "@/routes/admin/LookupsPage";
 import SystemPage from "@/routes/admin/SystemPage";
 import UsersPage from "@/routes/admin/UsersPage";
 import KioskPage from "@/routes/kiosk/KioskPage";
@@ -36,6 +37,9 @@ export default function App() {
         <Route path="employees/new" element={<EmployeeFormPage />} />
         <Route path="employees/:id/edit" element={<EmployeeFormPage />} />
         <Route path="employees/:id/enroll" element={<EnrollPage />} />
+
+        {/* Lookups */}
+        <Route path="lookups" element={<LookupsPage />} />
 
         {/* Attendance */}
         <Route path="attendance" element={<AttendancePage />} />

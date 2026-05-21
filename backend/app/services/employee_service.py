@@ -3,11 +3,31 @@ from __future__ import annotations
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from backend.app.models.attendance_event import AttendanceEvent
+from backend.app.models.department import Department
 from backend.app.models.employee import Employee
+from backend.app.models.position import Position
+from backend.app.models.enrollment import Enrollment
 from backend.app.schemas.employee import EmployeeCreate, EmployeeUpdate
 
 
 class DuplicateEmployeeCodeError(Exception):
+    pass
+
+
+class InvalidDepartmentError(Exception):
+    """Raised when the department does not exist in the lookup table."""
+    pass
+
+
+class InvalidPositionError(Exception):
+    """Raised when the position does not exist in the lookup table."""
+    pass
+
+
+class EmployeeHasRelatedDataError(Exception):
+    """Raised when deleting an employee would detach historical business data."""
+
     pass
 
 
@@ -37,7 +57,7 @@ def list_employees(
     items_stmt = (
         select(Employee)
         .options(selectinload(Employee.enrollments))
-        .order_by(Employee.id.asc())
+        .order_by(Employee.id.desc())
     )
 
     if filters:
@@ -58,6 +78,8 @@ def get_employee(db: Session, employee_id: int) -> Employee | None:
 
 def create_employee(db: Session, payload: EmployeeCreate) -> Employee:
     ensure_employee_code_available(db, payload.employee_code)
+    _ensure_department_exists(db, payload.department)
+    _ensure_position_exists(db, payload.position)
 
     employee = Employee(**payload.model_dump())
     db.add(employee)
@@ -80,6 +102,8 @@ def update_employee(
         payload.employee_code,
         exclude_employee_id=employee_id,
     )
+    _ensure_department_exists(db, payload.department)
+    _ensure_position_exists(db, payload.position)
 
     for field, value in payload.model_dump().items():
         setattr(employee, field, value)
@@ -93,6 +117,28 @@ def delete_employee(db: Session, employee_id: int) -> bool:
     employee = get_employee(db, employee_id)
     if employee is None:
         return False
+
+    related_count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(Enrollment)
+            .where(Enrollment.employee_id == employee_id)
+        )
+        or 0
+    )
+    related_count += int(
+        db.scalar(
+            select(func.count())
+            .select_from(AttendanceEvent)
+            .where(AttendanceEvent.employee_id == employee_id)
+        )
+        or 0
+    )
+    if related_count > 0:
+        raise EmployeeHasRelatedDataError(
+            "Nhân viên đã có dữ liệu chấm công hoặc enrollment. "
+            "Hãy chuyển trạng thái sang Tạm ngưng để giữ lịch sử báo cáo."
+        )
 
     db.delete(employee)
     db.commit()
@@ -122,3 +168,19 @@ def ensure_employee_code_available(
 
     if db.scalar(stmt) is not None:
         raise DuplicateEmployeeCodeError
+
+
+def _ensure_department_exists(db: Session, name: str) -> None:
+    stmt = select(Department).where(func.lower(Department.name) == name.strip().lower())
+    if db.scalar(stmt) is None:
+        raise InvalidDepartmentError(
+            f"Phòng ban '{name}' không tồn tại. Vui lòng tạo trong mục Danh mục trước."
+        )
+
+
+def _ensure_position_exists(db: Session, name: str) -> None:
+    stmt = select(Position).where(func.lower(Position.name) == name.strip().lower())
+    if db.scalar(stmt) is None:
+        raise InvalidPositionError(
+            f"Chức vụ '{name}' không tồn tại. Vui lòng tạo trong mục Danh mục trước."
+        )

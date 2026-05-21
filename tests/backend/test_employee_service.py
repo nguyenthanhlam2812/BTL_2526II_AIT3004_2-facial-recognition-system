@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+import pytest
+
+from backend.app.models.attendance_event import AttendanceEvent
 from backend.app.models.employee import Employee
 from backend.app.models.enrollment import Enrollment
 from backend.app.services import employee_service
@@ -66,6 +69,23 @@ def test_list_employees_filters_by_department_case_insensitive_exact_match(db_se
 
     assert total == 1
     assert [employee.id for employee in items] == [it_employee.id]
+
+
+def test_list_employees_returns_newest_first(db_session):
+    seed_employee(db_session, employee_code="E001")
+    seed_employee(db_session, employee_code="E002")
+    newest = seed_employee(db_session, employee_code="E003")
+
+    items, total = employee_service.list_employees(
+        db_session,
+        q=None,
+        department=None,
+        page=1,
+        page_size=1,
+    )
+
+    assert total == 3
+    assert [employee.id for employee in items] == [newest.id]
 
 
 def test_list_employees_maps_face_data_status_values(db_session):
@@ -142,3 +162,35 @@ def test_list_employees_uses_latest_enrollment_for_face_data_status(db_session):
 
     assert total == 1
     assert items[0].face_data_status == "pending"
+
+
+def test_delete_employee_rejects_employee_with_enrollment(db_session):
+    employee = seed_employee(db_session, employee_code="E-ENROLLED")
+    seed_enrollment(
+        db_session,
+        employee.id,
+        status="success",
+        processed_count=2,
+        created_at=datetime.utcnow(),
+    )
+
+    with pytest.raises(employee_service.EmployeeHasRelatedDataError):
+        employee_service.delete_employee(db_session, employee.id)
+
+    assert db_session.get(Employee, employee.id) is not None
+
+
+def test_delete_employee_rejects_employee_with_attendance_history(db_session):
+    employee = seed_employee(db_session, employee_code="E-HISTORY")
+    event = AttendanceEvent(
+        employee_id=employee.id,
+        action_type="check_in",
+        attendance_status="recorded",
+    )
+    db_session.add(event)
+    db_session.commit()
+
+    with pytest.raises(employee_service.EmployeeHasRelatedDataError):
+        employee_service.delete_employee(db_session, employee.id)
+
+    assert db_session.get(Employee, employee.id) is not None

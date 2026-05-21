@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from backend.app.models.attendance_event import AttendanceEvent
 from backend.app.models.employee import Employee
 from backend.app.models.enrollment import Enrollment
 
@@ -97,13 +98,28 @@ def test_get_employees_honors_department_filter(client, db_session):
     assert payload["items"][0]["face_data_status"] == "pending"
 
 
+def test_get_employees_keeps_legacy_employee_codes_readable(client, db_session):
+    seed_employee(
+        db_session,
+        employee_code="LIVE_ENR_20260504134435",
+        department="IT",
+    )
+
+    response = client.get("/api/employees?page=1&page_size=20")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["employee_code"] == "LIVE_ENR_20260504134435"
+
+
 def test_create_employee_normalizes_business_fields(client):
     response = client.post(
         "/api/employees",
         json={
             "employee_code": " emp0001 ",
             "full_name": "  Nguyen   Van   A  ",
-            "department": "  IT  ",
+            "department": "  Software   Engineering  ",
             "position": "  Software   Engineer  ",
             "status": "active",
         },
@@ -113,7 +129,7 @@ def test_create_employee_normalizes_business_fields(client):
     payload = response.json()
     assert payload["employee_code"] == "EMP0001"
     assert payload["full_name"] == "Nguyen Van A"
-    assert payload["department"] == "IT"
+    assert payload["department"] == "Software Engineering"
     assert payload["position"] == "Software Engineer"
 
 
@@ -123,8 +139,8 @@ def test_create_employee_rejects_invalid_business_fields(client):
         json={
             "employee_code": "EMP 001",
             "full_name": "Nguyen Van A",
-            "department": "IT",
-            "position": "Engineer",
+            "department": "Software Engineering",
+            "position": "Software Engineer",
             "status": "active",
         },
     )
@@ -135,8 +151,8 @@ def test_create_employee_rejects_invalid_business_fields(client):
         json={
             "employee_code": "EMP0002",
             "full_name": "<script>",
-            "department": "IT",
-            "position": "Engineer",
+            "department": "Software Engineering",
+            "position": "Software Engineer",
             "status": "active",
         },
     )
@@ -149,8 +165,8 @@ def test_create_employee_rejects_duplicate_code_case_insensitively(client):
         json={
             "employee_code": "EMP0003",
             "full_name": "Nguyen Van A",
-            "department": "IT",
-            "position": "Engineer",
+            "department": "Software Engineering",
+            "position": "Software Engineer",
             "status": "active",
         },
     )
@@ -161,9 +177,45 @@ def test_create_employee_rejects_duplicate_code_case_insensitively(client):
         json={
             "employee_code": "emp0003",
             "full_name": "Nguyen Van B",
-            "department": "HR",
-            "position": "Manager",
+            "department": "Data & Analytics",
+            "position": "Data Analyst",
             "status": "active",
         },
     )
     assert duplicate_response.status_code == 409
+
+
+def test_delete_employee_allows_employee_without_history(client):
+    create_response = client.post(
+        "/api/employees",
+        json={
+            "employee_code": "EMP-DELETE",
+            "full_name": "Delete Me",
+            "department": "Software Engineering",
+            "position": "Software Engineer",
+            "status": "active",
+        },
+    )
+    assert create_response.status_code == 201
+
+    delete_response = client.delete(f"/api/employees/{create_response.json()['id']}")
+
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"ok": True}
+
+
+def test_delete_employee_rejects_employee_with_attendance_history(client, db_session):
+    employee = seed_employee(db_session, employee_code="E-HISTORY", department="IT")
+    db_session.add(
+        AttendanceEvent(
+            employee_id=employee.id,
+            action_type="check_in",
+            attendance_status="recorded",
+        )
+    )
+    db_session.commit()
+
+    delete_response = client.delete(f"/api/employees/{employee.id}")
+
+    assert delete_response.status_code == 409
+    assert "Tạm ngưng" in delete_response.json()["detail"]

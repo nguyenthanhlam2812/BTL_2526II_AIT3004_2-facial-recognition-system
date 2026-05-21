@@ -1,24 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  Combobox,
   Group,
-  InputBase,
   Paper,
-  ScrollArea,
   SegmentedControl,
+  Select,
   Stack,
   Text,
   TextInput,
-  useCombobox,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { IconArrowLeft, IconDeviceFloppy } from "@tabler/icons-react";
 import type { AxiosError } from "axios";
-import { createEmployee, updateEmployee, listEmployeeDepartments } from "@/shared/api/employees";
+import { createEmployee, updateEmployee } from "@/shared/api/employees";
+import { listDepartmentNames, listPositionNames } from "@/shared/api/lookups";
 import { useRequireAuth } from "@/shared/hooks/useRequireAuth";
 import { canOperate } from "@/shared/lib/access";
 import type { Employee, EmployeeCreate, EmployeeStatus } from "@/shared/types/api";
@@ -45,7 +43,7 @@ function normalizeEmployeeValues(values: EmployeeCreate): EmployeeCreate {
 function validateEmployeeCode(value: string) {
   const normalized = value.trim().toUpperCase();
   if (!EMPLOYEE_CODE_PATTERN.test(normalized)) {
-    return "Mã nhân viên phải dài 2-32 ký tự, chỉ gồm chữ, số hoặc dấu gạch ngang.";
+    return "Mã nhân viên phải dài 2–32 ký tự, bắt đầu bằng chữ hoa hoặc số, chỉ dùng chữ hoa, số và dấu gạch ngang.";
   }
   return null;
 }
@@ -66,95 +64,11 @@ function validateBusinessText(label: string, minLength: number, maxLength: numbe
   };
 }
 
-/**
- * Combobox creatable cho Department/Position:
- * - Hiển dropdown với danh sách từ DB
- * - Cho phép nhập mới nếu chưa có trong list
- * - Bật search để lọc nhanh
- */
-function DepartmentCombobox({
-  value,
-  onChange,
-  error,
-  departments,
-}: {
-  value: string;
-  onChange: (val: string) => void;
-  error?: React.ReactNode;
-  departments: string[];
-}) {
-  const combobox = useCombobox({
-    onDropdownClose: () => combobox.resetSelectedOption(),
-  });
-  const [search, setSearch] = useState(value);
-
-  const filtered = departments.filter((d) =>
-    d.toLowerCase().includes(search.toLowerCase().trim())
-  );
-
-  const exactMatch = departments.some(
-    (d) => d.toLowerCase() === search.toLowerCase().trim()
-  );
-
-  const options = filtered.map((d) => (
-    <Combobox.Option value={d} key={d}>
-      {d}
-    </Combobox.Option>
-  ));
-
-  return (
-    <Combobox
-      store={combobox}
-      withinPortal={false}
-      onOptionSubmit={(val) => {
-        onChange(val);
-        setSearch(val);
-        combobox.closeDropdown();
-      }}
-    >
-      <Combobox.Target>
-        <InputBase
-          label="Phòng ban"
-          rightSection={<Combobox.Chevron />}
-          value={search}
-          onChange={(event) => {
-            combobox.openDropdown();
-            combobox.updateSelectedOptionIndex();
-            const v = event.currentTarget.value;
-            setSearch(v);
-            onChange(v); // giữ form và input đồng bộ
-          }}
-          onClick={() => combobox.openDropdown()}
-          onFocus={() => combobox.openDropdown()}
-          onBlur={() => {
-            const normalized = collapseSpaces(search);
-            onChange(normalized);
-            setSearch(normalized);
-            combobox.closeDropdown();
-          }}
-          placeholder="IT"
-          rightSectionPointerEvents="none"
-          error={error}
-        />
-      </Combobox.Target>
-
-      <Combobox.Dropdown>
-        <Combobox.Options>
-          <ScrollArea.Autosize mah={200} type="scroll">
-            {options}
-            {!exactMatch && search.trim().length >= 2 && (
-              <Combobox.Option value={search.trim()}>
-                + Thêm &quot;{search.trim()}&quot;
-              </Combobox.Option>
-            )}
-            {filtered.length === 0 && search.trim().length < 2 && (
-              <Combobox.Empty>Nhập tên phòng ban...</Combobox.Empty>
-            )}
-          </ScrollArea.Autosize>
-        </Combobox.Options>
-      </Combobox.Dropdown>
-    </Combobox>
-  );
+function validateRequired(label: string) {
+  return (value: string) => {
+    if (!value || !value.trim()) return `Vui lòng chọn ${label}.`;
+    return null;
+  };
 }
 
 export default function EmployeeFormPage() {
@@ -168,9 +82,14 @@ export default function EmployeeFormPage() {
   const isEdit = !!id;
   const employee = state?.employee as Employee | undefined;
 
-  const { data: departments = [] } = useQuery({
-    queryKey: ["employees", "departments"],
-    queryFn: listEmployeeDepartments,
+  const { data: departmentNames = [] } = useQuery({
+    queryKey: ["lookup-departments-names"],
+    queryFn: listDepartmentNames,
+  });
+
+  const { data: positionNames = [] } = useQuery({
+    queryKey: ["lookup-positions-names"],
+    queryFn: listPositionNames,
   });
 
   useEffect(() => {
@@ -194,8 +113,8 @@ export default function EmployeeFormPage() {
     validate: {
       employee_code: validateEmployeeCode,
       full_name: validateBusinessText("Họ tên", 2, 100),
-      department: validateBusinessText("Phòng ban", 2, 64),
-      position: validateBusinessText("Chức vụ", 2, 64),
+      department: validateRequired("phòng ban"),
+      position: validateRequired("chức vụ"),
     },
   });
 
@@ -233,7 +152,7 @@ export default function EmployeeFormPage() {
     <Stack gap="lg" maw={640}>
       <PageHeader
         title={isEdit ? "Sửa nhân viên" : "Tạo nhân viên"}
-        subtitle="Thông tin này dùng để hiển thị ở dashboard, lịch sử chấm công và kết quả kiosk."
+        subtitle="Thông tin này hiển thị trên tổng quan, lịch sử chấm công và màn hình kiosk."
         actions={
           <Button
             variant="subtle"
@@ -254,26 +173,45 @@ export default function EmployeeFormPage() {
           <Stack gap="md">
             <TextInput
               label="Mã nhân viên"
-              description="Nên dùng mã ngắn, duy nhất, dễ đối chiếu khi demo."
-              placeholder="E001"
+              description="Ví dụ: EMP001. Chỉ gồm chữ hoa, số và dấu gạch ngang, dài 2–32 ký tự."
+              placeholder="EMP001"
               {...form.getInputProps("employee_code")}
             />
             <TextInput
               label="Họ và tên"
-              description="Tên sẽ xuất hiện ở overlay kiosk khi nhận diện thành công."
-              placeholder="Nguyen Van A"
+              description="Tên hiển thị trên màn hình kiosk và trong báo cáo chấm công."
+              placeholder="Nguyễn Văn A"
               {...form.getInputProps("full_name")}
             />
-            <DepartmentCombobox
-              value={form.values.department}
-              onChange={(val) => form.setFieldValue("department", val)}
+            <Select
+              label="Phòng ban"
+              description="Chọn từ danh mục phòng ban đã tạo."
+              placeholder="Chọn phòng ban..."
+              data={departmentNames}
+              searchable
+              nothingFoundMessage={
+                departmentNames.length === 0
+                  ? "Chưa có phòng ban. Vui lòng tạo trong mục Danh mục."
+                  : "Không tìm thấy phòng ban."
+              }
+              value={form.values.department || null}
+              onChange={(value) => form.setFieldValue("department", value ?? "")}
               error={form.errors.department}
-              departments={departments}
             />
-            <TextInput
+            <Select
               label="Chức vụ"
-              placeholder="Software Engineer"
-              {...form.getInputProps("position")}
+              description="Chọn từ danh mục chức vụ đã tạo."
+              placeholder="Chọn chức vụ..."
+              data={positionNames}
+              searchable
+              nothingFoundMessage={
+                positionNames.length === 0
+                  ? "Chưa có chức vụ. Vui lòng tạo trong mục Danh mục."
+                  : "Không tìm thấy chức vụ."
+              }
+              value={form.values.position || null}
+              onChange={(value) => form.setFieldValue("position", value ?? "")}
+              error={form.errors.position}
             />
 
             <Stack gap={6}>
@@ -289,7 +227,7 @@ export default function EmployeeFormPage() {
                 ]}
               />
               <Text size="xs" c="var(--text-muted)">
-                Nhân viên tạm ngưng vẫn giữ lịch sử, nhưng không nên dùng để demo check-in mới.
+                Nhân viên tạm ngưng vẫn lưu lịch sử chấm công nhưng sẽ không được nhận diện khi check-in.
               </Text>
             </Stack>
 

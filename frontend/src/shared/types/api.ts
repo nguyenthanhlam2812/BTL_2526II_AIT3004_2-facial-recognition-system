@@ -254,3 +254,15 @@ export interface AuditLogListResponse {
   items: AuditLog[];
   total: number;
 }
+
+// --- Lookup tables (Department, Position) ---
+export interface LookupItem {
+  id: number;
+  name: string;
+  created_at: string;
+}
+
+export interface LookupItemListResponse {
+  items: LookupItem[];
+  total: number;
+}

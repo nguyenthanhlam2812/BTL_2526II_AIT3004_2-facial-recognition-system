@@ -14,6 +14,9 @@ from backend.app.schemas.employee import (
 )
 from backend.app.services.employee_service import (
     DuplicateEmployeeCodeError,
+    EmployeeHasRelatedDataError,
+    InvalidDepartmentError,
+    InvalidPositionError,
     create_employee as create_employee_service,
     delete_employee as delete_employee_service,
     list_departments as list_departments_service,
@@ -64,7 +67,12 @@ def create_employee(
     except DuplicateEmployeeCodeError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Employee code already exists.",
+            detail="Mã nhân viên đã tồn tại.",
+        ) from exc
+    except (InvalidDepartmentError, InvalidPositionError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
         ) from exc
     record_audit_log(
         db,
@@ -94,7 +102,12 @@ def update_employee(
     except DuplicateEmployeeCodeError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Employee code already exists.",
+            detail="Mã nhân viên đã tồn tại.",
+        ) from exc
+    except (InvalidDepartmentError, InvalidPositionError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
         ) from exc
 
     if employee is None:
@@ -130,7 +143,11 @@ def delete_employee(
         f"{target.employee_code} - {target.full_name}" if target is not None else None
     )
     target_code = target.employee_code if target is not None else None
-    deleted = delete_employee_service(db, employee_id)
+    try:
+        deleted = delete_employee_service(db, employee_id)
+    except EmployeeHasRelatedDataError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -19,6 +19,7 @@ import { useForm, isNotEmpty, matchesField } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import {
   IconActivityHeartbeat,
+  IconBuildingCommunity,
   IconCalendarStats,
   IconChevronDown,
   IconClipboardList,
@@ -50,12 +51,13 @@ type NavItem = {
 const navItems: NavItem[] = [
   { label: "Tổng quan", path: "/admin/dashboard", icon: IconDashboard },
   { label: "Nhân viên", path: "/admin/employees", icon: IconUsers },
+  { label: "Danh mục", path: "/admin/lookups", icon: IconBuildingCommunity },
   { label: "Chấm công", path: "/admin/attendance", icon: IconClockHour4 },
   { label: "Báo cáo", path: "/admin/reports", icon: IconCalendarStats },
-  { label: "Audit", path: "/admin/audit", icon: IconClipboardList, ownerOnly: true },
+  { label: "Nhật ký", path: "/admin/audit", icon: IconClipboardList, ownerOnly: true },
   { label: "Người dùng", path: "/admin/users", icon: IconUserCog, ownerOnly: true },
   { label: "Cấu hình", path: "/admin/system", icon: IconSettings, ownerOnly: true },
-  { label: "Kiosk", path: "/kiosk", icon: IconScan, external: true },
+  { label: "Kiosk chấm công", path: "/kiosk", icon: IconScan, external: true },
 ];
 
 function getErrorDetail(error: unknown): string {
@@ -162,7 +164,7 @@ export default function AdminLayout() {
                 Face Attendance
               </Text>
               <Text size="xs" c="var(--text-muted)">
-                AI recognition console
+                Bảng điều khiển chấm công
               </Text>
             </Stack>
           </Group>
@@ -194,7 +196,7 @@ export default function AdminLayout() {
               </UnstyledButton>
             </Menu.Target>
             <Menu.Dropdown>
-              <Menu.Label>Admin session</Menu.Label>
+              <Menu.Label>Tài khoản đang dùng</Menu.Label>
               <Menu.Item
                 leftSection={<IconKey size={16} />}
                 onClick={() => setPasswordModalOpen(true)}
@@ -270,10 +272,10 @@ export default function AdminLayout() {
                 <Group gap="xs" wrap="nowrap">
                   <IconActivityHeartbeat size={17} color="var(--accent-primary-2)" />
                   <Text size="xs" c="var(--text-secondary)">
-                    Server
+                    Máy chủ
                   </Text>
                 </Group>
-                <GlowDot status="success" label="Online" />
+                <GlowDot status="success" label="Đang hoạt động" />
               </Group>
             </Box>
           </Stack>

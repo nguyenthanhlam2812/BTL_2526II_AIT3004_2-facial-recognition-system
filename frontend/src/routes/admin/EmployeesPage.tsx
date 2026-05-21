@@ -18,6 +18,7 @@ import {
 import { useDebouncedValue } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconPencil, IconPlus, IconScan, IconSearch, IconTrash } from "@tabler/icons-react";
+import type { AxiosError } from "axios";
 import { deleteEmployee, listEmployeeDepartments, listEmployees } from "@/shared/api/employees";
 import { useRequireAuth } from "@/shared/hooks/useRequireAuth";
 import { canOperate } from "@/shared/lib/access";
@@ -26,6 +27,10 @@ import GlowDot from "@/shared/ui/GlowDot";
 import PageHeader from "@/shared/ui/PageHeader";
 
 const PAGE_SIZE = 10;
+
+function getErrorDetail(error: unknown, fallback: string) {
+  return (error as AxiosError<{ detail?: string }>).response?.data?.detail ?? fallback;
+}
 
 function faceDataMeta(status: EmployeeFaceDataStatus) {
   switch (status) {
@@ -52,7 +57,7 @@ export default function EmployeesPage() {
   const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
   const [debouncedSearch] = useDebouncedValue(search, 300);
 
-  const { data, isLoading } = useQuery({
+  const { data, error, isError, isLoading, refetch } = useQuery({
     queryKey: ["employees", { q: debouncedSearch, department, page }],
     queryFn: () =>
       listEmployees({
@@ -75,8 +80,12 @@ export default function EmployeesPage() {
       notifications.show({ color: "green", message: "Đã xóa nhân viên." });
       setDeleteTarget(null);
     },
-    onError() {
-      notifications.show({ color: "red", message: "Xóa thất bại, vui lòng thử lại." });
+    onError(error) {
+      notifications.show({
+        color: "red",
+        title: "Không thể xóa nhân viên",
+        message: getErrorDetail(error, "Xóa thất bại, vui lòng thử lại."),
+      });
     },
   });
 
@@ -220,6 +229,20 @@ export default function EmployeesPage() {
                     Đang tải...
                   </Table.Td>
                 </Table.Tr>
+              ) : isError ? (
+                <Table.Tr>
+                  <Table.Td colSpan={7} ta="center" py="xl">
+                    <Stack align="center" gap={6}>
+                      <Text fw={600}>Không tải được danh sách nhân viên.</Text>
+                      <Text size="sm" c="var(--text-secondary)">
+                        {getErrorDetail(error, "Kiểm tra backend rồi thử lại.")}
+                      </Text>
+                      <Button size="xs" variant="default" onClick={() => void refetch()}>
+                        Tải lại
+                      </Button>
+                    </Stack>
+                  </Table.Td>
+                </Table.Tr>
               ) : rows?.length ? (
                 rows
               ) : (
@@ -253,7 +276,9 @@ export default function EmployeesPage() {
             <Text span fw={600}>
               {deleteTarget?.full_name}
             </Text>{" "}
-            ({deleteTarget?.employee_code})? Thao tác này không thể hoàn tác.
+            ({deleteTarget?.employee_code})? Hệ thống chỉ cho xóa hồ sơ nhập nhầm chưa có
+            enrollment hoặc lịch sử chấm công. Nếu nhân viên đã có dữ liệu, hãy chuyển trạng
+            thái sang Tạm ngưng để giữ nguyên báo cáo.
           </Text>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setDeleteTarget(null)}>
