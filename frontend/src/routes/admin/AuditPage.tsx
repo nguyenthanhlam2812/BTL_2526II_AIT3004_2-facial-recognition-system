@@ -177,8 +177,8 @@ export default function AuditPage() {
   return (
     <Stack gap="lg">
       <PageHeader
-        title="Audit"
-        subtitle="Theo dõi các thao tác quản trị quan trọng trong hệ thống nội bộ."
+        title="Nhật ký thao tác"
+        subtitle="Theo dõi các thao tác quản trị quan trọng trong hệ thống."
         actions={
           <Button
             variant="default"
@@ -244,7 +244,7 @@ export default function AuditPage() {
             ) : (
               <Table.Tr>
                 <Table.Td colSpan={5} ta="center" c="var(--text-secondary)" py="xl">
-                  Chưa có audit log nào.
+                  Chưa có nhật ký thao tác nào.
                 </Table.Td>
               </Table.Tr>
             )}

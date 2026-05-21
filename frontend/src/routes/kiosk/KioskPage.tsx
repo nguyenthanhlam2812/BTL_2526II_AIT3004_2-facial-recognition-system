@@ -338,7 +338,7 @@ export default function KioskPage() {
                 <IconScan size={23} stroke={1.8} />
               </ThemeIcon>
               <Title order={1} size="h2" c="var(--text-primary)">
-                Kiosk chấm công
+                Kiosk chấm công dùng chung
               </Title>
             </Group>
             <Group gap="sm">
@@ -408,7 +408,7 @@ export default function KioskPage() {
           ) : (
             <video
               ref={videoRef}
-              aria-label="Kiosk camera preview"
+              aria-label="Khung camera kiosk"
               autoPlay
               muted
               playsInline

@@ -44,21 +44,21 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: "viewer", label: "Viewer" },
 ];
 
-const ROLE_MATRIX: { role: UserRole; scope: string; canTest: string }[] = [
+const ROLE_MATRIX: { role: UserRole; scope: string; restriction: string }[] = [
   {
     role: "owner",
-    scope: "Toàn quyền: quản lý người dùng, đổi quyền, reset mật khẩu, sửa cấu hình hệ thống.",
-    canTest: "Vào Người dùng và Cấu hình để kiểm tra quyền ghi.",
+    scope: "Toàn quyền: quản lý người dùng, phân quyền, reset mật khẩu, chỉnh sửa cấu hình hệ thống.",
+    restriction: "Có toàn quyền truy cập, bao gồm trang Người dùng và Cấu hình hệ thống.",
   },
   {
     role: "admin",
-    scope: "Vận hành: tạo/sửa nhân viên, enrollment, xóa lịch sử chấm công, xem báo cáo.",
-    canTest: "Đăng nhập admin rồi kiểm tra không thấy Người dùng và Cấu hình.",
+    scope: "Vận hành: tạo/sửa nhân viên, enrollment khuôn mặt, xóa lịch sử chấm công, xem báo cáo.",
+    restriction: "Không truy cập được trang Người dùng và Cấu hình hệ thống.",
   },
   {
     role: "viewer",
-    scope: "Chỉ xem: tổng quan, nhân viên, chấm công và báo cáo.",
-    canTest: "Đăng nhập viewer rồi kiểm tra không có nút tạo/xóa/enroll và không thấy Cấu hình.",
+    scope: "Chỉ đọc: xem tổng quan, danh sách nhân viên, lịch sử chấm công và báo cáo.",
+    restriction: "Không có quyền tạo, sửa, xóa dữ liệu hoặc thực hiện enrollment.",
   },
 ];
 
@@ -69,7 +69,7 @@ function normalizeUsernameInput(value: string) {
 function validateUsername(value: string) {
   const normalized = normalizeUsernameInput(value);
   if (!USERNAME_PATTERN.test(normalized)) {
-    return "Username phải dài 3-64 ký tự và chỉ gồm chữ, số, dấu chấm, gạch ngang hoặc gạch dưới.";
+    return "Tên đăng nhập phải dài 3–64 ký tự, chỉ gồm chữ thường, số, dấu chấm, gạch ngang hoặc gạch dưới.";
   }
   return null;
 }
@@ -293,7 +293,7 @@ export default function UsersPage() {
       <Stack gap="lg">
         <PageHeader
           title="Người dùng"
-          subtitle="Quản lý tài khoản quản trị và kiểm thử quyền owner/admin/viewer."
+          subtitle="Quản lý tài khoản quản trị và phân quyền truy cập hệ thống."
           actions={
             <Button
               leftSection={<IconPlus size={18} />}
@@ -311,13 +311,13 @@ export default function UsersPage() {
           style={{ background: "var(--bg-card)", borderColor: "var(--border-subtle)" }}
         >
           <Stack gap="sm">
-            <Text fw={700}>Ma trận quyền để test nhanh</Text>
+            <Text fw={700}>Phân quyền hệ thống</Text>
             <Table verticalSpacing="xs" horizontalSpacing="sm">
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Quyền</Table.Th>
-                  <Table.Th>Quyền chính</Table.Th>
-                  <Table.Th>Cách kiểm tra</Table.Th>
+                  <Table.Th>Vai trò</Table.Th>
+                  <Table.Th>Phạm vi quyền</Table.Th>
+                  <Table.Th>Giới hạn truy cập</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -328,7 +328,7 @@ export default function UsersPage() {
                       {item.scope}
                     </Table.Td>
                     <Table.Td c="var(--text-secondary)" fz="sm">
-                      {item.canTest}
+                      {item.restriction}
                     </Table.Td>
                   </Table.Tr>
                 ))}
@@ -402,16 +402,26 @@ export default function UsersPage() {
           )}
         >
           <Stack gap="md">
-            <TextInput label="Tên đăng nhập" {...createForm.getInputProps("username")} />
-            <PasswordInput label="Mật khẩu" {...createForm.getInputProps("password")} />
+            <TextInput
+              label="Tên đăng nhập"
+              description="Chỉ gồm chữ thường, số, dấu chấm, gạch ngang hoặc gạch dưới (3–64 ký tự)."
+              placeholder="vd: admin.01"
+              {...createForm.getInputProps("username")}
+            />
+            <PasswordInput
+              label="Mật khẩu"
+              description="Tối thiểu 8 ký tự, gồm ít nhất một chữ cái và một chữ số."
+              {...createForm.getInputProps("password")}
+            />
             <Select
-              label="Quyền"
+              label="Vai trò"
               data={ROLE_OPTIONS}
               allowDeselect={false}
               {...createForm.getInputProps("role")}
             />
             <Switch
-              label="Đang hoạt động"
+              label="Kích hoạt tài khoản"
+              description="Tài khoản bị khóa sẽ không thể đăng nhập."
               {...createForm.getInputProps("is_active", { type: "checkbox" })}
             />
             <Group justify="flex-end">
@@ -444,15 +454,20 @@ export default function UsersPage() {
           })}
         >
           <Stack gap="md">
-            <TextInput label="Tên đăng nhập" {...editForm.getInputProps("username")} />
+            <TextInput
+              label="Tên đăng nhập"
+              description="Chỉ gồm chữ thường, số, dấu chấm, gạch ngang hoặc gạch dưới."
+              {...editForm.getInputProps("username")}
+            />
             <Select
-              label="Quyền"
+              label="Vai trò"
               data={ROLE_OPTIONS}
               allowDeselect={false}
               {...editForm.getInputProps("role")}
             />
             <Switch
-              label="Đang hoạt động"
+              label="Kích hoạt tài khoản"
+              description="Tài khoản bị khóa sẽ không thể đăng nhập."
               {...editForm.getInputProps("is_active", { type: "checkbox" })}
             />
             <Group justify="flex-end">

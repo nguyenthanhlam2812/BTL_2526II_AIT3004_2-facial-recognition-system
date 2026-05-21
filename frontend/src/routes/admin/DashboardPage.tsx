@@ -62,6 +62,14 @@ function actionLabel(action: AttendanceEvent["action_type"]) {
   return action === "check_in" ? "Check-in" : "Check-out";
 }
 
+function timezoneLabel(timezone?: string) {
+  if (!timezone) return "...";
+  if (timezone === "Asia/Ho_Chi_Minh") return "giờ Việt Nam";
+  if (timezone === "Asia/Bangkok") return "giờ Bangkok";
+  if (timezone === "UTC") return "giờ UTC";
+  return timezone;
+}
+
 function eventTimestamp(event: AttendanceEvent) {
   return event.captured_at ?? event.created_at;
 }
@@ -199,7 +207,7 @@ function StatusDonut({ data, total }: { data: DonutSegment[]; total: number }) {
           {total}
         </text>
         <text x={center} y={center + 24} textAnchor="middle" fill="var(--text-muted)" fontSize="12">
-          total
+          nhân viên
         </text>
       </svg>
     </Box>
@@ -250,7 +258,7 @@ export default function DashboardPage() {
     <Stack gap="xl">
       <PageHeader
         title="Tổng quan"
-        subtitle={`${dayjs().format("dddd, DD/MM/YYYY")} · ${summary?.business_timezone ?? "..."}`}
+        subtitle={`${dayjs().format("dddd, DD/MM/YYYY")} · ${timezoneLabel(summary?.business_timezone)}`}
         actions={
           <SegmentedControl
             value={range}
@@ -274,7 +282,7 @@ export default function DashboardPage() {
           label="Có mặt hôm nay"
           value={stats.present}
           accent="success"
-          delta="Theo report"
+          delta="Theo báo cáo"
           icon={<IconLogin2 size={22} stroke={1.8} />}
         />
         <StatCard
@@ -307,7 +315,7 @@ export default function DashboardPage() {
               <Stack gap={2}>
                 <Text fw={700}>Check-in theo ngày</Text>
                 <Text size="sm" c="var(--text-secondary)">
-                  Tổng hợp backend theo business timezone
+                  Tính theo múi giờ chấm công
                 </Text>
               </Stack>
               <IconCalendarStats size={22} color="var(--accent-primary-2)" />
@@ -329,7 +337,7 @@ export default function DashboardPage() {
             <Stack gap={2}>
               <Text fw={700}>Trạng thái hôm nay</Text>
               <Text size="sm" c="var(--text-secondary)">
-                Theo report aggregate của backend
+                Tổng hợp từ báo cáo hôm nay
               </Text>
             </Stack>
             <StatusDonut data={donutData} total={totalEmployees} />
@@ -355,7 +363,7 @@ export default function DashboardPage() {
           <Stack gap={2}>
             <Text fw={700}>Hoạt động gần đây</Text>
             <Text size="sm" c="var(--text-secondary)">
-              8 sự kiện mới nhất từ kiosk
+              Các sự kiện check-in/out gần nhất từ kiosk
             </Text>
           </Stack>
           <Anchor size="sm" onClick={() => navigate("/admin/attendance")} style={{ cursor: "pointer" }}>
@@ -409,7 +417,7 @@ export default function DashboardPage() {
 
       <Group justify="flex-end">
         <Button variant="subtle" onClick={() => window.open("/kiosk", "_blank")}>
-          Mở kiosk
+          Mở kiosk chấm công
         </Button>
       </Group>
     </Stack>

@@ -316,7 +316,7 @@ export default function ReportsPage() {
             {rangeError ? (
               <Table.Tr>
                 <Table.Td colSpan={7} ta="center" c="var(--text-secondary)" py="xl">
-                  Truy vấn báo cáo đang tắt cho tới khi giảm khoảng ngày.
+                  Vui lòng điều chỉnh khoảng ngày để xem báo cáo.
                 </Table.Td>
               </Table.Tr>
             ) : isLoading ? (

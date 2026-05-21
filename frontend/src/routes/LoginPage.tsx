@@ -120,7 +120,7 @@ export default function LoginPage() {
 
               {import.meta.env.DEV && (
                 <Text size="xs" c="var(--text-muted)" ta="center" className="mono">
-                  Demo: admin / admin123
+                  Tài khoản demo: admin / admin123
                 </Text>
               )}
             </Stack>

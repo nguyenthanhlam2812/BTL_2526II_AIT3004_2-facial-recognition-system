@@ -283,7 +283,7 @@ export default function SystemPage() {
     <Stack gap="xl">
       <PageHeader
         title="Cấu hình hệ thống"
-        subtitle="Runtime settings an toàn cho recognition và reports."
+        subtitle="Cấu hình vận hành an toàn cho nhận diện và báo cáo."
         actions={
           <Badge variant="light" color={canWrite ? "teal" : "gray"} size="lg">
             {canWrite ? "Có thể sửa" : "Chỉ xem"}
@@ -316,16 +316,16 @@ export default function SystemPage() {
           <SettingRow label="Model" value={data.insightface_model_name} />
         </SettingsCard>
 
-        <SettingsCard title="Runtime" icon={<IconCpu size={21} stroke={1.8} />}>
-          <SettingRow label="Environment" value={data.environment} />
-          <SettingRow label="API prefix" value={data.api_prefix} />
+        <SettingsCard title="Vận hành" icon={<IconCpu size={21} stroke={1.8} />}>
+          <SettingRow label="Môi trường" value={data.environment} />
+          <SettingRow label="Đường dẫn API" value={data.api_prefix} />
           <SettingRow
-            label="Business timezone"
+            label="Múi giờ chấm công"
             value={data.business_timezone}
             source={fieldSource.business_timezone}
           />
           <SettingRow
-            label="Warm-up model"
+            label="Khởi động sẵn model"
             value={data.warmup_face_model}
             source={fieldSource.warmup_face_model}
           />
@@ -422,7 +422,7 @@ export default function SystemPage() {
                 }
               />
               <Select
-                label="Business timezone"
+                label="Múi giờ chấm công"
                 data={["UTC", "Asia/Bangkok", "Asia/Ho_Chi_Minh"]}
                 disabled={!canWrite}
                 allowDeselect={false}
@@ -435,8 +435,8 @@ export default function SystemPage() {
                 }
               />
               <Switch
-                label="Warm-up model khi backend khởi động"
-                description="Cần restart backend để áp dụng."
+                label="Khởi động sẵn model khi backend chạy"
+                description="Cần khởi động lại backend để áp dụng."
                 disabled={!canWrite}
                 checked={Boolean(settingsForm.values.warmup_face_model)}
                 onChange={(event) =>

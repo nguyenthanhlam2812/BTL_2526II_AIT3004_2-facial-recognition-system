@@ -251,7 +251,7 @@ export default function AttendancePage() {
       <Stack gap="lg">
         <PageHeader
           title="Lịch sử chấm công"
-          subtitle="Theo dõi check-in, check-out và kết quả nhận diện từ kiosk."
+          subtitle="Theo dõi lượt check-in/check-out và kết quả nhận diện từ kiosk chấm công."
           actions={
             <Group gap="xs">
               <Button
