@@ -120,7 +120,7 @@ export default function LoginPage() {
 
               {import.meta.env.DEV && (
                 <Text size="xs" c="var(--text-muted)" ta="center" className="mono">
-                  Tài khoản demo: admin / admin123
+                  Local default: admin / admin123. Public demo dùng password trong .env.docker.
                 </Text>
               )}
             </Stack>

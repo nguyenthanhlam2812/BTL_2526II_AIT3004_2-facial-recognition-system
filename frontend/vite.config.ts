@@ -8,6 +8,7 @@ const defaultKioskToken = "local-kiosk-token";
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, path.resolve(__dirname, ".."), "");
   const kioskToken = env.KIOSK_API_TOKEN || defaultKioskToken;
+  const apiTarget = env.VITE_API_TARGET || "http://127.0.0.1:8000";
 
   return {
     envDir: "..",
@@ -19,14 +20,14 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: {
         "/api/attendance/frame": {
-          target: "http://127.0.0.1:8000",
+          target: apiTarget,
           changeOrigin: true,
           headers: {
             "X-Kiosk-Token": kioskToken,
           },
         },
-        "/api": "http://127.0.0.1:8000",
-        "/healthz": "http://127.0.0.1:8000",
+        "/api": apiTarget,
+        "/healthz": apiTarget,
       },
     },
     test: {
