@@ -1,108 +1,153 @@
 # Sơ đồ hệ thống
 
-## 1. Kiến trúc cuối cùng
+File này là nguồn sơ đồ chính của repo. Các sơ đồ dùng Mermaid để GitHub render trực tiếp và dễ chỉnh khi code thay đổi.
+
+## 1. Use case
 
 ```mermaid
 flowchart LR
-    Admin["Admin UI"]
-    Kiosk["Kiosk UI"]
-    Frontend["Frontend container / Nginx"]
-    Backend["FastAPI backend"]
-    Worker["RQ worker"]
-    Redis["Redis / RQ"]
-    MySQL["MySQL"]
-    MinIO["MinIO"]
-    Qdrant["Qdrant"]
-    Camera["Webcam"]
+    Owner["Owner"]
+    Admin["Admin"]
+    Viewer["Viewer"]
+    Operator["Người vận hành kiosk"]
 
-    Admin --> Frontend
-    Kiosk --> Frontend
-    Camera --> Kiosk
-    Frontend --> Backend
-    Backend --> MySQL
-    Backend --> MinIO
-    Backend --> Qdrant
-    Backend --> Redis
-    Redis --> Worker
+    Login["Đăng nhập admin"]
+    Dashboard["Xem tổng quan"]
+    Lookups["Quản lý phòng ban/chức vụ"]
+    Employees["Quản lý nhân viên"]
+    Enrollment["Đăng ký khuôn mặt"]
+    Attendance["Xem/xóa/lọc lịch sử chấm công"]
+    Reports["Xem/export báo cáo"]
+    Users["Quản lý tài khoản quản trị"]
+    Settings["Cấu hình hệ thống"]
+    Audit["Xem nhật ký thao tác"]
+    Kiosk["Check-in/check-out bằng kiosk"]
+
+    Owner --> Login
+    Admin --> Login
+    Viewer --> Login
+    Owner --> Dashboard
+    Admin --> Dashboard
+    Viewer --> Dashboard
+    Owner --> Lookups
+    Admin --> Lookups
+    Owner --> Employees
+    Admin --> Employees
+    Viewer --> Employees
+    Owner --> Enrollment
+    Admin --> Enrollment
+    Owner --> Attendance
+    Admin --> Attendance
+    Viewer --> Attendance
+    Owner --> Reports
+    Admin --> Reports
+    Viewer --> Reports
+    Owner --> Users
+    Owner --> Settings
+    Owner --> Audit
+    Operator --> Kiosk
+```
+
+## 2. Triển khai Docker Compose
+
+```mermaid
+flowchart LR
+    AdminBrowser["Admin browser"] --> Nginx["nginx"]
+    KioskBrowser["Kiosk browser"] --> Nginx
+    Nginx -->|"/*"| Frontend["frontend: React static SPA"]
+    Nginx -->|"/api/*"| Backend["backend: FastAPI"]
+    Nginx -->|"inject X-Kiosk-Token"| Backend
+
+    Backend --> MySQL["mysql"]
+    Backend --> Redis["redis"]
+    Backend --> MinIO["minio"]
+    Backend --> Qdrant["qdrant"]
+
+    Redis --> Worker["worker: RQ"]
     Worker --> MinIO
     Worker --> Qdrant
     Worker --> MySQL
+
+    Ngrok["Ngrok optional"] -.-> Nginx
 ```
 
-## 2. Luồng enrollment
+## 3. Luồng đăng ký khuôn mặt
 
 ```mermaid
 sequenceDiagram
-    participant Admin as Admin UI / Swagger
-    participant Backend as FastAPI backend
+    actor Admin
+    participant UI as Admin UI
+    participant API as FastAPI
+    participant MySQL as MySQL
     participant MinIO as MinIO
-    participant MySQL as MySQL
-    participant Redis as Redis / RQ
-    participant Worker as Worker
+    participant Redis as Redis
+    participant Worker as RQ Worker
     participant Qdrant as Qdrant
 
-    Admin->>Backend: Upload enrollment images
-    Backend->>MinIO: Store images
-    Backend->>MySQL: Create enrollment records
-    Backend->>Redis: Enqueue job
+    Admin->>UI: Tạo nhân viên, chọn phòng ban/chức vụ
+    UI->>API: POST /api/employees
+    API->>MySQL: Insert employee
+    API-->>UI: Employee created
+
+    Admin->>UI: Upload ảnh hoặc chụp 3 góc
+    UI->>API: POST /api/employees/{id}/enrollments
+    API->>MinIO: Lưu ảnh enrollment
+    API->>MySQL: Tạo enrollment + enrollment_images
+    API->>Redis: Enqueue enrollment job
+    API-->>UI: job_id, status pending
+
     Redis->>Worker: Deliver job
-    Worker->>MinIO: Read images
-    Worker->>Worker: Detect face + extract embedding
-    Worker->>Qdrant: Upsert vectors
-    Worker->>MySQL: Update status
-    Admin->>Backend: Poll job status
+    Worker->>MinIO: Đọc ảnh
+    Worker->>Worker: Detect face, tạo embedding
+    Worker->>Qdrant: Upsert employee face vectors
+    Worker->>MySQL: Cập nhật processed/failed/status
+    UI->>API: GET /api/enrollments/{job_id}
+    API-->>UI: Trạng thái enrollment
 ```
 
-## 3. Luồng chấm công
+## 4. Luồng chấm công
 
 ```mermaid
 sequenceDiagram
-    participant Kiosk as Kiosk UI / Swagger
-    participant Backend as FastAPI backend
+    actor Person as Nhân viên trước camera
+    participant Kiosk as Kiosk UI
+    participant Nginx as Nginx
+    participant API as FastAPI
     participant Qdrant as Qdrant
+    participant Redis as Redis
     participant MySQL as MySQL
 
-    Kiosk->>Backend: POST /api/attendance/frame
-    Backend->>Backend: Detect face + extract embedding
-    Backend->>Qdrant: Search nearest vector
-    Backend->>Backend: Apply threshold
+    Person->>Kiosk: Đưa mặt vào khung
+    Kiosk->>Nginx: POST /api/attendance/frame
+    Nginx->>API: Forward kèm X-Kiosk-Token
+    API->>API: Detect face, tạo embedding
 
-    alt Recorded
-        Backend->>MySQL: Insert attendance event
-        Backend-->>Kiosk: recorded
-    else Unknown
-        Backend->>MySQL: Insert unknown event
-        Backend-->>Kiosk: unknown_face
-    else Multiple faces
-        Backend->>MySQL: Insert multiple_faces event
-        Backend-->>Kiosk: multiple_faces
+    alt Không có mặt hợp lệ
+        API->>MySQL: Ghi event unknown_face nếu được cấu hình
+        API-->>Kiosk: unknown_face
+    else Nhiều mặt
+        API->>MySQL: Ghi event multiple_faces
+        API-->>Kiosk: multiple_faces
+    else Một mặt
+        API->>Qdrant: Search nearest embedding
+        API->>API: So sánh threshold và employee active
+        alt Match hợp lệ
+            API->>Redis: Check camera duplicate gate
+            alt Chưa ghi trùng
+                API->>MySQL: Insert attendance_event recorded
+                API->>Redis: Set gate TTL 5 phút
+            else Đã ghi trong cửa sổ gate
+                API->>Redis: Refresh gate TTL
+            end
+            API-->>Kiosk: recorded
+        else Không đủ ngưỡng
+            API->>MySQL: Ghi event unknown_face
+            API-->>Kiosk: unknown_face
+        end
     end
 ```
 
-## 4. Khởi động Docker
-
-```mermaid
-sequenceDiagram
-    participant Compose as docker compose
-    participant MySQL as mysql
-    participant Backend as backend
-    participant Worker as worker
-    participant Redis as redis
-
-    Compose->>MySQL: Start database
-    Compose->>Redis: Start queue
-    Compose->>Backend: Start backend
-    Backend->>MySQL: Wait database
-    Backend->>Backend: Run migration
-    Backend->>Backend: Seed admin
-    Backend->>Backend: Khởi động Uvicorn
-    Compose->>Worker: Start worker
-    Worker->>Redis: Listen enrollment queue
-```
-
 ## 5. ERD
-
-![ERD MySQL](assets/erd-mysql.svg)
 
 ```mermaid
 erDiagram
@@ -125,6 +170,18 @@ erDiagram
         varchar status
         datetime created_at
         datetime updated_at
+    }
+
+    DEPARTMENTS {
+        int id PK
+        varchar name UK
+        datetime created_at
+    }
+
+    POSITIONS {
+        int id PK
+        varchar name UK
+        datetime created_at
     }
 
     ENROLLMENTS {
@@ -167,7 +224,54 @@ erDiagram
         datetime created_at
     }
 
+    AUDIT_LOGS {
+        bigint id PK
+        bigint actor_user_id FK
+        varchar actor_username
+        varchar actor_role
+        varchar action
+        varchar resource_type
+        varchar resource_id
+        varchar resource_label
+        text metadata_json
+        datetime created_at
+    }
+
+    SYSTEM_SETTINGS {
+        varchar key PK
+        text value
+        varchar value_type
+        datetime updated_at
+    }
+
     EMPLOYEES ||--o{ ENROLLMENTS : has
     ENROLLMENTS ||--|{ ENROLLMENT_IMAGES : contains
     EMPLOYEES o|--o{ ATTENDANCE_EVENTS : matches
+    USERS o|--o{ AUDIT_LOGS : writes
 ```
+
+Ghi chú: `employees.department` và `employees.position` lưu tên đã chọn từ danh mục. Bản hiện tại không dùng foreign key để giữ dữ liệu báo cáo ổn định nếu tên danh mục thay đổi sau này.
+
+## 6. Luồng CI/CD
+
+```mermaid
+flowchart TD
+    Push["Push hoặc pull request vào main"]
+    BackendTests["Backend tests: pytest"]
+    FrontendChecks["Frontend: test, lint, build"]
+    ComposeConfig["Docker Compose config check"]
+    BuildImages["Build 4 images: backend, worker, frontend, nginx"]
+    PushImages["Push Docker Hub khi push main"]
+    Smoke["Docker Hub smoke test"]
+
+    Push --> BackendTests
+    Push --> FrontendChecks
+    Push --> ComposeConfig
+    BackendTests --> BuildImages
+    FrontendChecks --> BuildImages
+    ComposeConfig --> BuildImages
+    BuildImages --> PushImages
+    PushImages --> Smoke
+```
+
+Smoke test kiểm tra healthcheck, login, owner-only settings và kiosk token enforcement.

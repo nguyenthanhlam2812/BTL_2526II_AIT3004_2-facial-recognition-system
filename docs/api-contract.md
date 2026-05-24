@@ -1,20 +1,22 @@
-# Hợp đồng API
+# API contract
 
-Tài liệu này dùng cho frontend admin/kiosk bám theo backend hiện tại.
+Base URL khi đi qua Nginx:
 
-## Quy ước
+```text
+http://localhost:8080/api
+```
 
-- Prefix: `/api`
-- Auth admin: Bearer token.
-- Swagger: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
-- Tài khoản seed: `admin` / `admin123`
-- FastAPI có thể trả lỗi qua field `detail`.
+Base URL khi gọi trực tiếp backend:
+
+```text
+http://localhost:8000/api
+```
+
+Admin APIs dùng Bearer token. Kiosk endpoint dùng `X-Kiosk-Token`; khi gọi qua Nginx token được inject server-side.
 
 ## Auth
 
 ### `POST /api/auth/login`
-
-Request:
 
 ```json
 {
@@ -39,112 +41,152 @@ Response:
 
 ### `POST /api/auth/change-password`
 
-Yêu cầu đăng nhập.
+Yêu cầu đăng nhập. Mật khẩu mới dài 8-128 ký tự, không có khoảng trắng đầu/cuối, có ít nhất một chữ và một số.
 
 ```json
 {
   "current_password": "admin123",
-  "new_password": "new-password-123"
+  "new_password": "newpass123"
 }
 ```
 
-Response:
+## Users quản trị
+
+Prefix: `/api/admin/users`. Tất cả endpoint owner-only.
+
+| Method | Path | Ý nghĩa |
+| --- | --- | --- |
+| `GET` | `/api/admin/users` | List users, query `q`, `page`, `page_size` |
+| `POST` | `/api/admin/users` | Tạo user |
+| `PUT` | `/api/admin/users/{user_id}` | Sửa username, role, active |
+| `POST` | `/api/admin/users/{user_id}/reset-password` | Reset password |
+| `DELETE` | `/api/admin/users/{user_id}` | Xóa user |
+
+Create user:
 
 ```json
 {
-  "ok": true,
-  "message": "Password updated successfully."
+  "username": "viewer-demo",
+  "password": "viewer123",
+  "role": "viewer",
+  "is_active": true
 }
 ```
 
-## Nhân viên
+Rules:
 
-Trường chính:
+- `username`: lowercase, 3-64 ký tự, chữ/số/dot/dash/underscore.
+- `password`: cùng rule với change-password.
+- `role`: `owner`, `admin`, `viewer`.
 
-- `employee_code`: required, unique.
-- `full_name`: required.
-- `department`: required.
-- `position`: required.
-- `status`: `active` hoặc `inactive`.
+## Danh mục phòng ban/chức vụ
 
-### `GET /api/employees`
+Yêu cầu đăng nhập admin console. `owner` và `admin` được tạo/sửa/xóa; `viewer` chỉ xem.
 
-Yêu cầu đăng nhập vào admin console.
+### Departments
 
-Query: `q`, `department`, `page`, `page_size`.
+| Method | Path | Ý nghĩa |
+| --- | --- | --- |
+| `GET` | `/api/departments` | List department, query `q` |
+| `GET` | `/api/departments/names` | List tên để dùng trong select |
+| `POST` | `/api/departments` | Tạo department |
+| `PUT` | `/api/departments/{id}` | Sửa department |
+| `DELETE` | `/api/departments/{id}` | Xóa department nếu chưa có employee dùng |
 
-Response:
+### Positions
+
+| Method | Path | Ý nghĩa |
+| --- | --- | --- |
+| `GET` | `/api/positions` | List position, query `q` |
+| `GET` | `/api/positions/names` | List tên để dùng trong select |
+| `POST` | `/api/positions` | Tạo position |
+| `PUT` | `/api/positions/{id}` | Sửa position |
+| `DELETE` | `/api/positions/{id}` | Xóa position nếu chưa có employee dùng |
+
+Request tạo/sửa:
+
+```json
+{
+  "name": "Software Engineering"
+}
+```
+
+Response list:
 
 ```json
 {
   "items": [
     {
       "id": 1,
-      "employee_code": "E001",
-      "full_name": "Nguyễn Văn A",
-      "department": "IT",
-      "position": "Engineer",
-      "status": "active",
-      "face_data_status": "enrolled",
-      "created_at": "2026-05-08T10:00:00Z",
-      "updated_at": "2026-05-08T10:00:00Z"
+      "name": "Software Engineering",
+      "created_at": "2026-05-08T10:00:00"
     }
   ],
   "total": 1
 }
 ```
 
-### `POST /api/employees`
+## Nhân viên
 
-Yêu cầu quyền operator (`owner` hoặc `admin`).
+Prefix: `/api/employees`.
+
+| Method | Path | Quyền | Ý nghĩa |
+| --- | --- | --- | --- |
+| `GET` | `/api/employees` | owner/admin/viewer | List employees, query `q`, `department`, `page`, `page_size` |
+| `GET` | `/api/employees/departments` | owner/admin/viewer | List department đang có trong employees, giữ tương thích UI cũ |
+| `POST` | `/api/employees` | owner/admin | Tạo employee |
+| `PUT` | `/api/employees/{employee_id}` | owner/admin | Sửa employee |
+| `DELETE` | `/api/employees/{employee_id}` | owner/admin | Xóa employee nếu chưa có enrollment/attendance |
+
+Create/update:
 
 ```json
 {
-  "employee_code": "E001",
-  "full_name": "Nguyễn Văn A",
-  "department": "IT",
-  "position": "Engineer",
+  "employee_code": "EMP001",
+  "full_name": "Nguyen Van A",
+  "department": "Software Engineering",
+  "position": "Software Engineer",
   "status": "active"
 }
 ```
 
-### `PUT /api/employees/{employee_id}`
+Rules:
 
-Yêu cầu quyền operator (`owner` hoặc `admin`).
+- `employee_code`: normalize uppercase, 2-32 ký tự, chỉ chữ/số/dấu gạch ngang, unique case-insensitive.
+- `full_name`: 2-100 ký tự, trim/collapse spaces, chặn `<>{}`.
+- `department`: phải tồn tại trong `/api/departments`.
+- `position`: phải tồn tại trong `/api/positions`.
+- `status`: `active` hoặc `inactive`.
 
-Body giống `POST /api/employees`.
-
-### `DELETE /api/employees/{employee_id}`
-
-Yêu cầu quyền operator (`owner` hoặc `admin`).
+Response item:
 
 ```json
 {
-  "ok": true
+  "id": 1,
+  "employee_code": "EMP001",
+  "full_name": "Nguyen Van A",
+  "department": "Software Engineering",
+  "position": "Software Engineer",
+  "status": "active",
+  "face_data_status": "enrolled",
+  "created_at": "2026-05-08T10:00:00",
+  "updated_at": "2026-05-08T10:00:00"
 }
 ```
 
-### `GET /api/employees/departments`
-
-Yêu cầu đăng nhập vào admin console.
-
-Response:
-
-```json
-["IT", "HR", "Operations"]
-```
+`face_data_status`: `missing`, `pending`, `enrolled`, `failed`.
 
 ## Enrollment
 
 ### `POST /api/employees/{employee_id}/enrollments`
 
-Yêu cầu quyền operator (`owner` hoặc `admin`).
+Quyền `owner` hoặc `admin`.
 
 Content type: `multipart/form-data`
 
 Fields:
 
-- `files`: 1-5 ảnh.
+- `files`: 1-5 ảnh JPEG/PNG.
 
 Response:
 
@@ -159,7 +201,7 @@ Response:
 
 ### `GET /api/enrollments/{job_id}`
 
-Yêu cầu đăng nhập vào admin console.
+Yêu cầu đăng nhập admin console.
 
 ```json
 {
@@ -172,36 +214,31 @@ Yêu cầu đăng nhập vào admin console.
 }
 ```
 
-## Attendance
+## Chấm công
 
 ### `POST /api/attendance/frame`
 
-Kiosk route là public ở frontend, nhưng backend yêu cầu header `X-Kiosk-Token` khi gọi trực tiếp.
+Kiosk gửi frame nhận diện. Gọi trực tiếp backend phải có `X-Kiosk-Token`.
 
 Content type: `multipart/form-data`
 
 Fields:
 
-- `image`: required, JPEG/PNG.
+- `image`: JPEG/PNG.
 - `action_type`: `check_in` hoặc `check_out`.
 - `captured_at`: optional ISO datetime.
-- `camera_id`: optional string.
+- `camera_id`: optional string, mặc định theo service.
 - `record_unmatched`: optional boolean.
 
-Lưu ý:
-
-- Gọi thẳng vào backend không có `X-Kiosk-Token` sẽ trả `401`.
-- Endpoint có rate limit `10 requests/second` và có thể trả `429`.
-
-Response khi match:
+Response khi ghi nhận:
 
 ```json
 {
   "matched": true,
   "employee": {
     "id": 1,
-    "employee_code": "E001",
-    "full_name": "Nguyễn Văn A"
+    "employee_code": "EMP001",
+    "full_name": "Nguyen Van A"
   },
   "score": 0.86,
   "action_type": "check_in",
@@ -211,7 +248,7 @@ Response khi match:
 }
 ```
 
-Response khi unknown/multiple:
+Response khi lỗi nhận diện:
 
 ```json
 {
@@ -225,102 +262,37 @@ Response khi unknown/multiple:
 }
 ```
 
-`attendance_status` có thể là:
+`attendance_status`: `recorded`, `unknown_face`, `multiple_faces`.
 
-- `recorded`
-- `unknown_face`
-- `multiple_faces`
+### Events
 
-### `GET /api/attendance/reports/daily`
+| Method | Path | Quyền | Ý nghĩa |
+| --- | --- | --- | --- |
+| `GET` | `/api/attendance/events` | owner/admin/viewer | List event |
+| `GET` | `/api/attendance/events/export.csv` | owner/admin/viewer | Export CSV |
+| `DELETE` | `/api/attendance/events/selected` | owner/admin | Xóa các event đã chọn |
+| `DELETE` | `/api/attendance/events` | owner/admin | Xóa toàn bộ event |
 
-Yêu cầu đăng nhập vào admin console.
+Query list/export: `employee_id`, `action_type`, `attendance_status`, `from`, `to`, `page`, `page_size`.
 
-Query: `date`, `from`, `to`, `employee_id`, `department`, `status`, `page`, `page_size`.
-
-`status` có thể là:
-
-- `present`
-- `late`
-- `missing`
-
-Response:
-
-```json
-{
-  "items": [
-    {
-      "date": "2026-05-08",
-      "employee_id": 1,
-      "employee_code": "E001",
-      "full_name": "Nguyễn Văn A",
-      "department": "IT",
-      "first_check_in": "2026-05-08T08:55:00+07:00",
-      "last_check_out": "2026-05-08T17:32:00+07:00",
-      "summary_status": "present"
-    }
-  ],
-  "total": 1
-}
-```
-
-### `GET /api/attendance/reports/daily/export.csv`
-
-Yêu cầu đăng nhập vào admin console.
-
-Query giống `GET /api/attendance/reports/daily`.
-
-Response: file CSV UTF-8 BOM.
-
-### `GET /api/attendance/reports/dashboard-summary`
-
-Yêu cầu đăng nhập vào admin console.
-
-Query: `days` chỉ hỗ trợ `7` hoặc `30`.
-
-Response:
-
-```json
-{
-  "business_timezone": "Asia/Ho_Chi_Minh",
-  "total_employees": 10,
-  "today": {
-    "present": 8,
-    "late": 1,
-    "absent": 2
-  },
-  "trend": [
-    {
-      "date": "2026-05-08",
-      "check_in_count": 8
-    }
-  ]
-}
-```
-
-### `GET /api/attendance/events`
-
-Yêu cầu đăng nhập vào admin console.
-
-Query: `employee_id`, `action_type`, `from`, `to`, `page`, `page_size`.
-
-Response:
+Response list:
 
 ```json
 {
   "items": [
     {
       "id": 101,
-      "created_at": "2026-05-08T10:30:00Z",
-      "captured_at": "2026-05-08T10:30:00Z",
+      "created_at": "2026-05-08T10:30:00",
+      "captured_at": "2026-05-08T10:30:00",
       "action_type": "check_in",
       "attendance_status": "recorded",
       "score": 0.86,
-      "camera_id": "cam-01",
+      "camera_id": "main-kiosk",
       "snapshot_object_key": null,
       "employee": {
         "id": 1,
-        "employee_code": "E001",
-        "full_name": "Nguyễn Văn A"
+        "employee_code": "EMP001",
+        "full_name": "Nguyen Van A"
       }
     }
   ],
@@ -328,177 +300,31 @@ Response:
 }
 ```
 
-### `GET /api/attendance/events/export.csv`
+### Reports
 
-Yêu cầu đăng nhập vào admin console.
+| Method | Path | Ý nghĩa |
+| --- | --- | --- |
+| `GET` | `/api/attendance/reports/daily` | Báo cáo ngày |
+| `GET` | `/api/attendance/reports/daily/export.csv` | Export báo cáo ngày |
+| `GET` | `/api/attendance/reports/dashboard-summary` | Summary cho dashboard |
 
-Query: `employee_id`, `action_type`, `from`, `to`.
+Daily query: `date`, `from`, `to`, `employee_id`, `department`, `status`, `page`, `page_size`.
 
-Response: file CSV UTF-8 BOM.
+`status`: `present`, `late`, `missing`.
 
-### `DELETE /api/attendance/events/selected`
+Dashboard query: `days=7` hoặc `days=30`.
 
-Yêu cầu quyền operator (`owner` hoặc `admin`).
+## System settings
 
-```json
-{
-  "ids": [101, 102]
-}
-```
+Owner-only.
 
-Response:
+| Method | Path | Ý nghĩa |
+| --- | --- | --- |
+| `GET` | `/api/system/settings` | Xem cấu hình runtime không chứa secret |
+| `PATCH` | `/api/system/settings` | Sửa field editable |
+| `POST` | `/api/system/settings/reset` | Reset các key về default |
 
-```json
-{
-  "ok": true,
-  "deleted_count": 2
-}
-```
-
-### `DELETE /api/attendance/events`
-
-Yêu cầu quyền operator (`owner` hoặc `admin`).
-
-Response:
-
-```json
-{
-  "ok": true,
-  "deleted_count": 120
-}
-```
-
-## Người dùng quản trị
-
-Tất cả endpoint dưới đây đều là owner-only.
-
-### `GET /api/admin/users`
-
-Query: `q`, `page`, `page_size`.
-
-Response:
-
-```json
-{
-  "items": [
-    {
-      "id": 1,
-      "username": "admin",
-      "role": "owner",
-      "is_active": true,
-      "created_at": "2026-05-08T10:00:00Z",
-      "updated_at": "2026-05-08T10:00:00Z"
-    }
-  ],
-  "total": 1
-}
-```
-
-### `POST /api/admin/users`
-
-```json
-{
-  "username": "viewer-demo",
-  "password": "viewer-demo-123",
-  "role": "viewer",
-  "is_active": true
-}
-```
-
-### `PUT /api/admin/users/{user_id}`
-
-```json
-{
-  "username": "ops-admin",
-  "role": "admin",
-  "is_active": true
-}
-```
-
-### `POST /api/admin/users/{user_id}/reset-password`
-
-```json
-{
-  "password": "new-password-123"
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "user": {
-    "id": 2,
-    "username": "viewer-demo",
-    "role": "viewer",
-    "is_active": true,
-    "created_at": "2026-05-08T10:00:00Z",
-    "updated_at": "2026-05-08T10:00:00Z"
-  }
-}
-```
-
-### `DELETE /api/admin/users/{user_id}`
-
-Response:
-
-```json
-{
-  "ok": true
-}
-```
-
-## Cấu hình hệ thống
-
-### `GET /api/system/settings`
-
-Yêu cầu đăng nhập vào admin console.
-
-Endpoint này chỉ trả cấu hình không nhạy cảm. Response không chứa secret như `JWT_SECRET_KEY`, `MYSQL_PASSWORD`, `MINIO_SECRET_KEY`.
-
-Response:
-
-```json
-{
-  "environment": "development",
-  "api_prefix": "/api",
-  "attendance_threshold": 0.3,
-  "insightface_model_name": "buffalo_l",
-  "face_min_det_score": 0.5,
-  "face_min_area_ratio": 0.015,
-  "face_secondary_area_ratio": 0.35,
-  "warmup_face_model": true,
-  "qdrant_url": "http://qdrant:6333",
-  "qdrant_collection_employee_faces": "employee_faces",
-  "minio_endpoint": "minio:9000",
-  "redis": {
-    "scheme": "redis",
-    "host": "redis",
-    "port": 6379,
-    "database": 0
-  },
-  "fields": [
-    {
-      "key": "attendance_threshold",
-      "value": 0.3,
-      "source": "db",
-      "editable": true,
-      "value_type": "float",
-      "requires_restart": false,
-      "min_value": 0.0,
-      "max_value": 1.0,
-      "allowed_values": null
-    }
-  ]
-}
-```
-
-### `PATCH /api/system/settings`
-
-Yêu cầu owner.
-
-Chỉ gửi các field cần đổi.
+Patch example:
 
 ```json
 {
@@ -508,15 +334,39 @@ Chỉ gửi các field cần đổi.
 }
 ```
 
-### `POST /api/system/settings/reset`
+## Audit logs
 
-Yêu cầu owner.
+### `GET /api/audit/logs`
+
+Owner-only.
+
+Query: `q`, `action`, `resource_type`, `actor_user_id`, `from`, `to`, `page`, `page_size`.
+
+Response:
 
 ```json
 {
-  "keys": ["attendance_threshold", "business_timezone"]
+  "items": [
+    {
+      "id": 1,
+      "actor_user_id": 1,
+      "actor_username": "admin",
+      "actor_role": "owner",
+      "action": "employee.create",
+      "resource_type": "employee",
+      "resource_id": "42",
+      "resource_label": "EMP001 - Nguyen Van A",
+      "metadata": {
+        "employee_code": "EMP001"
+      },
+      "created_at": "2026-05-08T10:00:00"
+    }
+  ],
+  "total": 1
 }
 ```
+
+Audit metadata không lưu password, token, secret hoặc ảnh gốc.
 
 ## Healthcheck
 

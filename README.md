@@ -1,226 +1,249 @@
 # AI Facial Recognition Attendance
 
-Hệ thống MVP chấm công nhân viên bằng nhận diện khuôn mặt, gồm kiosk quét camera cho người dùng cuối và admin console để quản lý nhân sự, dữ liệu khuôn mặt, lịch sử chấm công, báo cáo theo ngày và cấu hình runtime an toàn.
+Hệ thống chấm công nội bộ bằng nhận diện khuôn mặt. Sản phẩm gồm kiosk camera cho nhân viên check-in/check-out, trang quản trị cho vận hành nhân sự, backend xử lý nhận diện, worker nền tạo embedding, lưu trữ MySQL/MinIO/Qdrant/Redis và Nginx đứng trước toàn bộ stack.
 
-## Chạy bản nộp
+## Chạy nhanh
 
 Yêu cầu:
 
 - Docker Desktop
 - Git
 
-Lệnh chạy đúng theo đường nộp:
+Clone repo và chạy từ thư mục dự án:
+
+```powershell
+git clone <repo-url>
+cd ai-facial-recognition
+```
+
+Chạy bản nộp bằng image đã publish:
 
 ```powershell
 docker compose pull
 docker compose up -d
 ```
 
-URL chính:
+Các URL chính:
 
-- Frontend: [http://localhost:8080](http://localhost:8080)
-- Admin: [http://localhost:8080/login](http://localhost:8080/login)
-- Kiosk: [http://localhost:8080/kiosk](http://localhost:8080/kiosk)
-- Tài liệu API: [http://localhost:8000/docs](http://localhost:8000/docs)
-- MinIO console: [http://localhost:9001](http://localhost:9001)
+| Mục | URL |
+| --- | --- |
+| Ứng dụng | [http://localhost:8080](http://localhost:8080) |
+| Admin | [http://localhost:8080/login](http://localhost:8080/login) |
+| Kiosk | [http://localhost:8080/kiosk](http://localhost:8080/kiosk) |
+| API docs | [http://localhost:8000/docs](http://localhost:8000/docs) |
+| MinIO console | [http://localhost:9001](http://localhost:9001) |
 
-Tài khoản local seed mặc định:
+Tài khoản seed local:
 
 ```text
 admin / admin123
 ```
 
-Lưu ý: seed admin chỉ được tạo khi user chưa tồn tại. Restart backend/container sẽ không tự ghi đè mật khẩu, quyền hay trạng thái mà UI đã cập nhật.
+Seed admin chỉ tạo khi DB chưa có user. Nếu đã đổi mật khẩu trong UI, restart container không ghi đè lại.
+
+Dependency chính nằm trong `requirements/backend.txt`, `requirements/worker.txt`, `requirements/test.txt`, `frontend/package.json` và root `package.json`.
 
 ## Kiến trúc
 
 ```mermaid
 flowchart LR
-    Admin["Admin Browser"] --> Nginx["Frontend / Nginx"]
-    Kiosk["Kiosk Browser"] --> Nginx
-    Nginx -->|"Bearer admin APIs"| Backend["FastAPI Backend"]
-    Nginx -->|"X-Kiosk-Token for /api/attendance/frame"| Backend
+    Admin["Admin browser"] --> Nginx["Nginx reverse proxy"]
+    Kiosk["Kiosk browser"] --> Nginx
+    Nginx -->|"/*"| Frontend["React SPA"]
+    Nginx -->|"/api/*"| Backend["FastAPI"]
     Backend --> MySQL["MySQL"]
+    Backend --> Redis["Redis"]
     Backend --> MinIO["MinIO"]
     Backend --> Qdrant["Qdrant"]
-    Backend --> Redis["Redis"]
-    Redis --> Worker["RQ Worker"]
+    Redis --> Worker["RQ worker"]
     Worker --> MinIO
     Worker --> Qdrant
-    Tunnel["Cloudflare Tunnel (optional)"] --> Nginx
+    Worker --> MySQL
 ```
 
-## Thành phần chính
+Thành phần chính:
 
 | Thành phần | Vai trò |
 | --- | --- |
-| `frontend` | React 19 + Vite + Mantine, được serve bằng Nginx |
-| `backend` | FastAPI monolith cho auth, employee, enrollment, attendance, reports, admin users và system settings |
-| `worker` | RQ worker xử lý enrollment background jobs |
-| `mysql` | Nguồn dữ liệu chính cho dữ liệu nghiệp vụ |
-| `redis` | Queue cho RQ |
-| `minio` | Object storage cho ảnh enrollment |
+| `frontend` | React/Vite/Mantine, gồm admin console và kiosk UI |
+| `backend` | FastAPI cho auth, nhân viên, enrollment, chấm công, báo cáo, audit, cấu hình |
+| `worker` | RQ worker xử lý ảnh enrollment và ghi embedding vào Qdrant |
+| `mysql` | Dữ liệu nghiệp vụ: users, employees, attendance, audit, settings |
+| `redis` | Queue enrollment và duplicate gate cho kiosk |
+| `minio` | Lưu ảnh enrollment |
 | `qdrant` | Vector database cho embedding khuôn mặt |
-| `tunnel` | Cloudflare Quick Tunnel cho demo công khai có kiểm soát |
+| `nginx` | Reverse proxy, route SPA/API và inject `X-Kiosk-Token` cho kiosk endpoint |
 
-## Tính năng chính
+Sơ đồ chi tiết nằm trong [docs/diagrams.md](docs/diagrams.md).
 
-- Kiosk check-in/check-out bằng camera, tự quét, có chống duplicate theo camera.
-- Employee CRUD và face enrollment pipeline qua Redis/RQ + Qdrant.
-- Dashboard tổng quan dùng backend summary làm nguồn dữ liệu chính.
-- Attendance history có filter, xóa chọn lọc, xóa toàn bộ, export CSV.
-- Daily reports theo múi giờ nghiệp vụ `Asia/Ho_Chi_Minh`, có filter và export CSV.
-- Admin user CRUD với 3 role: `owner`, `admin`, `viewer`.
-- Cấu hình runtime an toàn có thể sửa trong UI: threshold, face filters, múi giờ nghiệp vụ, cờ warm-up model.
+Admin UI và Kiosk UI là hai route/module trong cùng một React SPA image `frontend`; đây vẫn là hai frontend surface riêng theo đề bài. Kiosk xử lý live camera ở browser, phát hiện mặt cục bộ bằng MediaPipe rồi gửi frame định kỳ lên backend để nhận diện bằng InsightFace/Qdrant. Đây là near real-time frame scanning, không phải video streaming WebSocket/WebRTC.
 
-## Ánh xạ với yêu cầu đề bài
+## Tính năng
 
-| Yêu cầu | Cách project đáp ứng |
+- Kiosk check-in/check-out bằng camera, có tự quét và chống ghi trùng theo camera.
+- Enrollment bằng upload ảnh hoặc camera 3 góc `front`, `left`, `right`.
+- Quality gate ở frontend kiểm tra đúng 1 mặt, mặt đủ lớn và nằm trong khung trước khi chụp.
+- CRUD nhân viên, danh mục phòng ban/chức vụ, quản lý tài khoản quản trị.
+- Dashboard, lịch sử chấm công, báo cáo ngày và export CSV.
+- Lọc event theo `recorded`, `unknown_face`, `multiple_faces`.
+- Audit log cho thao tác quản trị nhạy cảm.
+- Cấu hình runtime owner-only: threshold, timezone, tham số face gate.
+- Validation dữ liệu user/employee để tránh mã nhân viên, username, password, phòng ban/chức vụ bị nhập loạn.
+
+## Quyền sử dụng
+
+| Role | Ý nghĩa |
 | --- | --- |
-| Frontend người dùng | Kiosk UI: camera, check-in/check-out, phản hồi nhận diện |
-| Frontend quản trị | Dashboard, Người dùng/Quyền, Nhân viên, Enrollment, Chấm công, Báo cáo, Cấu hình |
+| `owner` | Quản trị hệ thống: users, cấu hình, audit log, toàn bộ nghiệp vụ |
+| `admin` | Vận hành nhân sự: danh mục, nhân viên, enrollment, chấm công, báo cáo |
+| `viewer` | Xem dashboard, nhân viên, chấm công, báo cáo; không tạo/sửa/xóa |
+
+Không có public signup. Tài khoản admin console do `owner` tạo. Hồ sơ `employee` là dữ liệu nghiệp vụ chấm công, tách riêng với tài khoản đăng nhập admin console.
+
+## Mapping với yêu cầu đề bài
+
+| Yêu cầu | Cách đáp ứng |
+| --- | --- |
+| Frontend người dùng | Kiosk UI hiển thị camera, trạng thái nhận diện và kết quả chấm công |
+| Frontend quản trị | Admin UI quản lý users, quyền, cấu hình, nhân viên, enrollment, báo cáo |
 | Backend | FastAPI |
 | Database | MySQL |
 | Object storage | MinIO |
 | Vector database | Qdrant |
-| Queue | Redis + RQ worker |
-| Load balancer/Nginx | Nginx trong frontend container, proxy `/api` tới backend |
-| CI/CD | GitHub Actions chạy test/build, publish Docker Hub image trên `main`, smoke-test đường nộp |
-| Demo public | Cloudflare Tunnel qua `docker-compose.tunnel.yml` với fail-safe secrets |
+| Message/event queue | Redis + RQ worker cho tác vụ enrollment nền |
+| Load balancer | Nginx đứng trước frontend/backend |
+| Docker Compose | `docker-compose.yml` chạy toàn bộ stack |
+| Docker Hub | 4 image: backend, worker, frontend, nginx |
+| CI/CD | GitHub Actions test/build/push image và smoke-test stack |
 
-## Người dùng, quyền và cấu hình
+## Cấu hình môi trường
 
-- `owner`: toàn quyền, quản lý tài khoản quản trị và cấu hình runtime an toàn.
-- `admin`: vận hành employee, enrollment, attendance, reports.
-- `viewer`: xem dashboard, reports, history, settings ở chế độ chỉ đọc.
-- `employee` là thực thể nghiệp vụ cho attendance, tách riêng với admin-console users.
-- Seed admin chỉ là bootstrap account lúc ban đầu; sau khi đã tồn tại, lifecycle user được quản lý bằng UI/API, không bị env ghi đè ở mỗi lần restart.
-- Trang `Admin -> Cấu hình` cho phép người dùng đã đăng nhập tự đổi mật khẩu.
-- UI chỉ cho sửa cấu hình runtime an toàn; secret và hạ tầng như `JWT_SECRET_KEY`, DB, MinIO, Qdrant không writable qua web.
-
-## Kiosk auth và public demo
-
-Kiosk page vẫn là route public để flow demo không bị nặng, nhưng `POST /api/attendance/frame` không còn mở hoàn toàn:
-
-- Direct call tới backend bắt buộc có header `X-Kiosk-Token`.
-- Khi dùng kiosk qua `http://localhost:8080/kiosk`, Nginx sẽ tự inject token server-side.
-- Token không được đưa vào bundle frontend/browser JavaScript.
-
-Biến môi trường liên quan:
+Local demo dùng sẵn default trong compose. Nếu public demo qua Ngrok, tạo `.env.docker` từ `.env.docker.example` và đổi tối thiểu:
 
 ```env
-KIOSK_API_TOKEN=local-kiosk-token
-PUBLIC_DEMO_MODE=false
-JWT_SECRET_KEY=change-me
-SEED_ADMIN_PASSWORD=admin123
+PUBLIC_DEMO_MODE=true
+SEED_ADMIN_PASSWORD=replace-with-strong-password
+JWT_SECRET_KEY=replace-with-long-random-secret
+KIOSK_API_TOKEN=replace-with-strong-kiosk-token
 ```
 
-Nếu bật demo công khai qua Cloudflare Tunnel, backend sẽ fail startup nếu vẫn dùng giá trị mặc định cho:
+Ngrok cần thêm:
 
-- `SEED_ADMIN_PASSWORD`
-- `JWT_SECRET_KEY`
-- `KIOSK_API_TOKEN`
+```env
+NGROK_AUTHTOKEN=replace-with-ngrok-token
+```
 
-Checklist public demo:
-
-1. Tạo hoặc sửa `.env.docker`
-2. Đổi `SEED_ADMIN_PASSWORD`
-3. Đổi `JWT_SECRET_KEY`
-4. Đổi `KIOSK_API_TOKEN`
-5. Chạy:
+Lệnh public demo bằng Ngrok:
 
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.tunnel.yml --profile tunnel up -d
+docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.ngrok.yml --profile ngrok up -d
 ```
 
-Chi tiết thêm ở [docs/tunnel.md](docs/tunnel.md).
-
-## Docker Hub và release path
-
-Ba image chính:
-
-```text
-tlam281206/ai-facial-recognition-backend:latest
-tlam281206/ai-facial-recognition-worker:latest
-tlam281206/ai-facial-recognition-frontend:latest
-```
-
-Repo có hai cách chạy:
-
-- `docker-compose.yml`: stack dùng image Docker Hub, đúng đường nộp
-- `docker-compose.build.yml`: override build từ mã nguồn local để smoke-test patch mới
-
-Smoke-test local từ mã nguồn:
+Lấy HTTPS URL public từ Ngrok inspector:
 
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build backend worker frontend
+(Invoke-RestMethod http://localhost:4040/api/tunnels).tunnels | Select-Object -ExpandProperty public_url
 ```
 
-Publish image không làm thủ công trong repo này. Release path chính thức là:
+URL Ngrok free có thể đổi sau mỗi lần restart. Dùng public URL dạng `<public-url>/login` cho admin và `<public-url>/kiosk` cho kiosk. Camera browser ổn định hơn trên HTTPS public URL so với HTTP LAN.
+Trình duyệt có thể hiện trang cảnh báo miễn phí của Ngrok ở lần mở đầu tiên; chọn tiếp tục vào site demo nếu URL đúng là URL bạn vừa lấy từ `localhost:4040`.
 
-1. push vào `main`
-2. GitHub Actions build/push 3 image lên Docker Hub
-3. workflow chạy smoke-test trên runner sạch bằng đúng:
+Tắt stack public demo:
 
 ```powershell
-docker compose pull
-docker compose up -d
+docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.ngrok.yml --profile ngrok down
 ```
 
-## Luồng demo gợi ý
+Backend sẽ fail-fast khi bật `PUBLIC_DEMO_MODE=true` mà vẫn dùng secret mặc định.
+Không commit `.env.docker`; file này chứa `NGROK_AUTHTOKEN`, admin password, JWT secret và kiosk token thật.
 
-1. Mở `http://localhost:8080/login`, đăng nhập `owner`.
-2. Xem Dashboard để kiểm tra summary 7/30 ngày.
-3. Vào `Người dùng` tạo thêm account `admin` hoặc `viewer`.
-4. Vào `Cấu hình` đổi mật khẩu và chỉnh threshold/timezone nếu cần.
-5. Vào `Nhân viên`, tạo hoặc sửa nhân viên demo.
-6. Upload 3-5 ảnh enrollment và chờ worker xử lý xong.
-7. Mở `http://localhost:8080/kiosk`, cấp quyền camera.
-8. Chọn `Check-in` hoặc `Check-out`, đưa mặt vào khung để kiosk tự quét.
-9. Kiểm tra `Chấm công` và `Báo cáo` để xác nhận dữ liệu mới.
-
-## Quy ước nghiệp vụ
-
-- Múi giờ nghiệp vụ: `Asia/Ho_Chi_Minh`
-- Quy tắc đi muộn: `first_check_in > 09:00`
-- Dashboard và Reports dùng cùng aggregate từ backend
-- Daily report/export bị giới hạn 31 ngày mỗi request
-- Attendance CSV sự kiện thô bị từ chối nếu filter hiện tại vượt 50.000 dòng
-
-## Kiểm tra nhanh
-
-```powershell
-docker compose ps
-docker compose logs backend --tail=100
-docker compose logs worker --tail=100
-```
-
-Healthcheck:
-
-```powershell
-Invoke-WebRequest http://localhost:8000/healthz
-Invoke-WebRequest http://localhost:8080/healthz
-```
-
-## Test
+## Phát triển local
 
 Backend:
 
 ```powershell
-.\.venv\Scripts\python -m pytest tests\backend -q
+.\.venv\Scripts\python.exe -m alembic upgrade head
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 Frontend:
 
 ```powershell
 cd frontend
-npm run lint
-npm run build
+npm.cmd run dev
 ```
 
-## Tài liệu liên quan
+Build Docker từ mã nguồn local khi cần kiểm tra image:
 
-- [docs/database-setup.md](docs/database-setup.md): cấu hình env/database
-- [docs/demo-guide.md](docs/demo-guide.md): flow demo và xử lý lỗi
-- [docs/ci-cd.md](docs/ci-cd.md): workflow CI/CD và Docker Hub publish
-- [docs/tunnel.md](docs/tunnel.md): Cloudflare Tunnel cho demo public
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build backend worker frontend nginx
+```
+
+Đồng bộ `localhost:5173` và `localhost:8080`:
+
+- `http://localhost:5173` là Vite dev server, luôn đọc trực tiếp source frontend mới nhất.
+- `http://localhost:8080` là Nginx/Docker image, chỉ cập nhật sau khi build lại image `frontend` và `nginx`.
+- Nếu đã sửa frontend rồi thấy `5173` mới hơn `8080`, chạy lại lệnh build Docker ở trên.
+- Nếu đang bật Ngrok/public demo và muốn `8080` + public URL cùng ăn source mới, dùng:
+
+```powershell
+docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.build.yml -f docker-compose.ngrok.yml --profile ngrok up -d --build backend worker frontend nginx ngrok
+```
+
+Lưu ý URL đúng là `http://localhost:8080`; dạng `http://localhost8080` là thiếu dấu `:`.
+
+Nếu cần nộp bằng image Docker Hub, sau khi build/test local phải push code lên `main` để GitHub Actions build và publish lại image. Nếu chỉ chạy `docker compose pull`, Docker sẽ lấy image đã publish gần nhất, không phải source local chưa push.
+
+## Kiểm thử
+
+Backend:
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests\backend -q
+```
+
+Frontend:
+
+```powershell
+cd frontend
+npm.cmd run test:run
+npm.cmd run lint
+npm.cmd run build
+```
+
+Docker config:
+
+```powershell
+docker compose config --quiet
+docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.ngrok.yml --profile ngrok config --quiet
+```
+
+## Luồng demo gợi ý
+
+1. `docker compose pull && docker compose up -d`.
+2. Đăng nhập owner bằng `admin / admin123`.
+3. Tạo phòng ban/chức vụ trong `Danh mục`.
+4. Tạo nhân viên, chọn phòng ban/chức vụ từ danh mục.
+5. Enrollment bằng camera 3 góc hoặc upload ảnh.
+6. Mở kiosk, cấp quyền camera, check-in.
+7. Bấm scan thủ công khi demo người lạ/nhiều mặt nếu cần lưu `unknown_face` hoặc `multiple_faces` vào lịch sử; auto scan ưu tiên giảm nhiễu nên không ghi mọi frame lỗi.
+8. Xem `Chấm công`, lọc trạng thái nhận diện, export CSV.
+9. Xem `Báo cáo` và `Nhật ký`.
+10. Đăng nhập thử admin/viewer để chứng minh phân quyền.
+
+Chi tiết demo và câu trả lời Q&A nằm trong [docs/demo-guide.md](docs/demo-guide.md).
+
+## Giới hạn hiện tại
+
+- Hệ thống tập trung vào một kiosk demo; multi-site/multi-camera là hướng mở rộng.
+- Chưa có production-grade anti-spoofing. Bản demo có enrollment 3 góc và quality gate, nhưng ảnh in/video chất lượng cao vẫn cần model chống giả mạo chuyên dụng hoặc camera depth.
+- Chưa có ca kíp, nghỉ phép, tăng ca, payroll.
+- Snapshot chấm công chưa lưu dài hạn; bucket `snapshots` được giữ cho hướng mở rộng.
+- Backup/restore tự động và monitoring sâu chưa nằm trong phạm vi bản nộp.
+
+## Tài liệu
+
+- [docs/architecture.md](docs/architecture.md): kiến trúc, scope, data flow, limitation.
+- [docs/diagrams.md](docs/diagrams.md): các sơ đồ kỹ thuật chính.
+- [docs/api-contract.md](docs/api-contract.md): API contract.
+- [docs/demo-guide.md](docs/demo-guide.md): demo flow, dữ liệu demo, xử lý lỗi, Q&A.

@@ -1,159 +1,99 @@
 # Kiến trúc hệ thống
 
-Tài liệu này mô tả kiến trúc triển khai của bản nộp hiện tại. Chi tiết API nằm ở `docs/api-contract.md`; chi tiết database/env nằm ở `docs/database-setup.md`.
+Tài liệu này mô tả kiến trúc của bản nộp AI Facial Recognition Attendance: một hệ thống chấm công nội bộ bằng nhận diện khuôn mặt, chạy bằng Docker Compose và có đủ frontend người dùng, frontend quản trị, backend, queue, database, object storage, vector database và Nginx.
 
-## Mục tiêu triển khai
+## Mục tiêu nghiệp vụ
 
-Bản nộp dùng Docker Compose và image đã push lên Docker Hub. Giảng viên có thể chạy:
+Hệ thống phục vụ mô hình một công ty có điểm chấm công chung:
 
-```powershell
-docker compose pull
-docker compose up -d
-```
+- Nhân viên đi qua kiosk đặt tại văn phòng để check-in/check-out.
+- Quản trị viên vận hành danh mục, hồ sơ nhân viên, enrollment khuôn mặt, lịch sử chấm công và báo cáo.
+- Chủ hệ thống quản lý tài khoản quản trị, cấu hình runtime và audit log.
 
-Khi developer cần build local:
-
-```powershell
-docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build backend worker frontend
-```
+Kiosk không phải là cổng cá nhân của từng nhân viên. Nhân viên không cần đăng nhập để chấm công; backend nhận diện người trong frame và quyết định ghi nhận hay từ chối.
 
 ## Thành phần runtime
 
 | Thành phần | Vai trò |
 | --- | --- |
-| `frontend` | React/Vite SPA phục vụ bằng Nginx; gồm Admin UI và Kiosk UI; proxy `/api` tới backend |
-| `backend` | FastAPI monolith cho auth, employee, enrollment, attendance, reports, admin users và system settings |
-| `worker` | RQ worker xử lý enrollment background jobs |
-| `mysql` | Nguồn dữ liệu chính cho dữ liệu nghiệp vụ |
-| `redis` | Queue cho RQ |
-| `minio` | Object storage cho ảnh enrollment và snapshot |
-| `qdrant` | Vector database lưu/search face embedding |
+| `nginx` | Reverse proxy đứng trước app, route `/*` tới frontend, `/api/*` tới backend, inject `X-Kiosk-Token` cho `/api/attendance/frame` |
+| `frontend` | React/Vite/Mantine SPA, gồm Admin UI và Kiosk UI |
+| `backend` | FastAPI xử lý auth, users, employees, lookups, enrollments, attendance, reports, audit logs, system settings |
+| `worker` | RQ worker xử lý ảnh enrollment nền |
+| `mysql` | Nguồn dữ liệu nghiệp vụ chính |
+| `redis` | Queue enrollment và duplicate gate cho kiosk |
+| `minio` | Lưu ảnh enrollment |
+| `qdrant` | Lưu/search embedding khuôn mặt |
 
-Frontend người dùng trong đề bài là `Kiosk UI`: mở camera, gửi frame và hiển thị kết quả chấm công. Frontend quản trị là `Admin UI`: đăng nhập, dashboard tổng quan, quản lý người dùng quản trị, nhân viên, enrollment, lịch sử, báo cáo và cấu hình hệ thống.
+Image Docker Hub:
+
+```text
+tlam281206/ai-facial-recognition-backend:latest
+tlam281206/ai-facial-recognition-worker:latest
+tlam281206/ai-facial-recognition-frontend:latest
+tlam281206/ai-facial-recognition-nginx:latest
+```
+
+Admin UI và Kiosk UI chạy trong cùng `frontend` image nhưng là hai surface riêng: `/login` và `/admin/*` cho quản trị, `/kiosk` cho điểm chấm công dùng chung.
 
 ## Cấu trúc repo
 
 ```text
-backend/
-  app/
-    api/
-      routes/             API endpoints (auth, employees, enrollments, attendance/reports, admin users, system)
-      deps.py             dependency chung như auth/db
-      router.py           gom router chính
-    db/                   session và SQLAlchemy base
-    models/               ORM models: users, employees, enrollments, attendance, system settings
-    schemas/              Pydantic request/response schemas cho auth, users, employees, attendance, system
-    services/             business logic và integration logic
-    config.py             đọc env và settings
-    main.py               FastAPI app entrypoint
-    rate_limit.py         cấu hình limiter cho kiosk endpoint
-    security.py           JWT/password helpers
-  alembic/                database migrations
-  Dockerfile
-  docker_entrypoint.py    wait DB, migration, seed, start API
-
-worker/
-  app/
-    jobs.py               xử lý enrollment jobs
-    run_worker.py         RQ worker entrypoint
-  Dockerfile
-
-frontend/
-  public/
-    vendor/mediapipe/models/
-                         model face detector dùng local runtime
-  scripts/
-    prepare-mediapipe-assets.mjs
-                         copy WASM assets từ node_modules trước build/dev
-  src/
-    routes/
-      admin/              Admin UI (Dashboard, Employees, Enroll, Attendance, Reports, Users, System)
-      kiosk/              Kiosk UI, detector hook, overlay và scan components
-    shared/
-      api/                Axios wrappers (auth, employees, attendance, enrollments, kiosk, system)
-      hooks/              useAuth, useRequireAuth
-      lib/                access control và token helpers
-      types/              TypeScript interfaces cho API
-      ui/                 Shared UI components (StatCard, GlowDot, PageHeader, AccessDeniedState)
-    styles/               globals.css: CSS custom properties, glow utilities, scan animation
-    main.tsx              MantineProvider với dark theme (forceColorScheme="dark")
-    App.tsx               React Router routes
-  Dockerfile              build SPA và serve bằng Nginx
-  nginx.conf.template     reverse proxy `/api` tới backend và inject kiosk token server-side
-
-recognition/
-  pipelines/              PoC detect/embed/evaluation
-
-scripts/
-  poc/                    lệnh chạy PoC local
-  seed/                   seed admin/demo data
-
-tests/
-  backend/                unit tests cho route/service/worker và quyền truy cập
-
-docs/                     tài liệu kỹ thuật
-requirements/             dependency theo vai trò
-docker-compose.yml        stack dùng image Docker Hub
-docker-compose.build.yml  build image từ mã nguồn local
-docker-compose.tunnel.yml mở public demo qua Cloudflare Tunnel
+backend/        FastAPI app, SQLAlchemy models, Alembic migrations, services
+worker/         RQ worker cho enrollment
+frontend/       React admin/kiosk UI
+nginx/          Reverse proxy image
+recognition/    PoC nhận diện và đánh giá threshold
+scripts/        Seed/demo helper scripts
+tests/          Backend + frontend tests
+docs/           Tài liệu nộp bài
+requirements/   Dependency theo backend/worker/test/dev
 ```
 
-## Quyết định thiết kế
+## Data flow chính
 
-- Backend là FastAPI monolith để giữ hệ thống gọn, dễ demo và dễ deploy.
-- Enrollment chạy async qua Redis/RQ vì upload và tạo embedding có thể chậm.
-- Attendance chạy sync trong backend vì kiosk cần phản hồi ngay.
-- Reports và dashboard summary chạy từ backend aggregate để frontend không phải tự suy từ event list.
-- MySQL lưu dữ liệu nghiệp vụ chính.
-- MinIO lưu object ảnh; Qdrant lưu vector embedding.
-- Logic detect/extract embedding dùng chung qua `backend/app/services/face_analyzer.py`.
-- Nginx nằm trong image `frontend`, không tách service `nginx` riêng trong MVP.
-- Kiosk detector dùng MediaPipe assets local qua script prepare step, không phụ thuộc CDN runtime.
-- System settings endpoint chỉ trả cấu hình không nhạy cảm; owner có thể sửa các runtime settings an toàn, còn admin/viewer chỉ xem.
-- Frontend dùng Mantine v9 với `forceColorScheme="dark"` và custom theme; toàn bộ app chạy dark mode mặc định, không có toggle.
+### Đăng ký khuôn mặt
 
-## Luồng enrollment
+1. Admin tạo nhân viên và chọn phòng ban/chức vụ từ danh mục.
+2. Admin upload ảnh hoặc dùng camera mode chụp 3 góc `front`, `left`, `right`.
+3. Backend lưu ảnh vào MinIO, tạo bản ghi enrollment trong MySQL.
+4. Backend đẩy job vào Redis.
+5. Worker đọc ảnh, detect face, tạo embedding.
+6. Worker ghi vector vào Qdrant và cập nhật trạng thái enrollment trong MySQL.
 
-1. Admin tạo employee.
-2. Admin upload 1-5 ảnh enrollment.
-3. Backend lưu ảnh vào MinIO.
-4. Backend tạo enrollment records trong MySQL.
-5. Backend enqueue job vào Redis/RQ.
-6. Worker tải ảnh từ MinIO.
-7. Worker detect face và tạo embedding.
-8. Worker upsert embedding vào Qdrant.
-9. Worker cập nhật trạng thái enrollment trong MySQL.
+Enrollment `success` khi có ít nhất một ảnh xử lý thành công. Nếu toàn bộ ảnh lỗi, enrollment `failed`.
 
-Quy tắc MVP:
+### Chấm công
 
-- Một ảnh enrollment hợp lệ khi detect đúng 1 khuôn mặt và upsert Qdrant thành công.
-- Enrollment `success` khi có ít nhất 1 ảnh xử lý thành công.
-- Enrollment `failed` khi tất cả ảnh thất bại.
+1. Kiosk gửi frame tới `POST /api/attendance/frame`.
+2. Nginx inject `X-Kiosk-Token`; gọi trực tiếp backend không có token sẽ bị 401.
+3. Backend detect face, tạo embedding và search Qdrant.
+4. Backend so sánh score với threshold runtime.
+5. Nếu match employee active, backend ghi event `recorded`.
+6. Nếu không match hoặc nhiều mặt, backend ghi `unknown_face` hoặc `multiple_faces` theo cấu hình `record_unmatched`.
+7. Redis camera gate chặn ghi trùng cùng nhân viên trong cửa sổ 5 phút.
 
-## Luồng attendance
+Trạng thái attendance:
 
-1. Kiosk gửi frame lên `POST /api/attendance/frame`.
-2. Backend detect face và tạo embedding.
-3. Backend search nearest vector trong Qdrant.
-4. Backend so sánh score với `ATTENDANCE_THRESHOLD`.
-5. Backend ghi `attendance_events`.
-6. Backend trả kết quả cho kiosk.
+- `recorded`: nhận diện và ghi nhận thành công.
+- `unknown_face`: không có match đủ ngưỡng hoặc không có mặt hợp lệ.
+- `multiple_faces`: frame có nhiều khuôn mặt hợp lệ.
 
-Trạng thái chấm công:
+### Báo cáo
 
-- `recorded`: nhận diện được nhân viên.
-- `unknown_face`: không nhận diện được hoặc score dưới threshold.
-- `multiple_faces`: frame có nhiều hơn 1 khuôn mặt hợp lệ.
+Dashboard và báo cáo ngày dùng aggregate từ backend, không để frontend tự suy từ danh sách event. Múi giờ nghiệp vụ mặc định là `Asia/Ho_Chi_Minh`; đi muộn khi check-in đầu tiên sau 09:00.
 
 ## Dữ liệu chính
 
 MySQL tables:
 
-- `users`
-- `employees`
-- `enrollments`
-- `enrollment_images`
-- `attendance_events`
+- `users`: tài khoản admin console.
+- `employees`: hồ sơ nhân viên.
+- `departments`, `positions`: danh mục dùng khi tạo/sửa nhân viên.
+- `enrollments`, `enrollment_images`: job enrollment và ảnh nguồn.
+- `attendance_events`: event check-in/check-out và event lỗi nhận diện.
+- `audit_logs`: truy vết thao tác quản trị.
+- `system_settings`: cấu hình runtime editable.
 
 Qdrant collection:
 
@@ -162,28 +102,41 @@ Qdrant collection:
 MinIO buckets:
 
 - `enrollments`
-- `snapshots`
+- `snapshots` reserved cho hướng mở rộng; bản hiện tại chưa lưu snapshot chấm công dài hạn.
 
-## Image Docker Hub
+## Quyền và bảo mật
 
-```text
-tlam281206/ai-facial-recognition-backend:latest
-tlam281206/ai-facial-recognition-worker:latest
-tlam281206/ai-facial-recognition-frontend:latest
-```
+- `owner`: quản lý users, cấu hình, audit, toàn bộ nghiệp vụ.
+- `admin`: vận hành danh mục, nhân viên, enrollment, chấm công, báo cáo.
+- `viewer`: chỉ xem dashboard, nhân viên, chấm công, báo cáo.
 
-`docker-compose.yml` dùng các image này. `docker-compose.build.yml` chỉ dùng khi developer cần build lại image từ mã nguồn local.
+Không có public signup. System settings và audit logs owner-only. User/password/employee input được validate ở backend; frontend chỉ hỗ trợ nhập đúng hơn chứ không phải lớp bảo vệ chính.
 
-## Tiêu chí hoàn thành cho bản nộp
+Public demo cần đổi `SEED_ADMIN_PASSWORD`, `JWT_SECRET_KEY`, `KIOSK_API_TOKEN`; backend fail-fast nếu bật `PUBLIC_DEMO_MODE=true` mà vẫn dùng secret mặc định.
+Khi dùng Ngrok, `docker-compose.ngrok.yml` mở HTTPS public URL tới `nginx` và expose local inspector ở `http://localhost:4040`; `NGROK_AUTHTOKEN` chỉ đặt trong `.env.docker`, không commit.
 
-- Admin login được.
-- CRUD nhân viên được.
-- Upload enrollment được.
-- Worker index embedding vào Qdrant được.
-- Kiosk nhận diện được nhân viên đã enroll.
-- Kiosk từ chối được người lạ.
-- Kiosk báo được trường hợp nhiều khuôn mặt.
-- Dashboard hiển thị stat cards và biểu đồ chính xác.
-- History xem được event mới.
-- Owner sửa được cấu hình runtime an toàn; admin/viewer xem ở chế độ read-only.
-- Toàn bộ hệ thống chạy bằng Docker Compose.
+## Phạm vi bản nộp
+
+Trong phạm vi:
+
+- Kiosk nhận diện khuôn mặt gần thời gian thực cho check-in/check-out: browser hiển thị camera live, frontend gate mặt cục bộ và backend nhận diện từng frame gửi lên.
+- Admin console quản lý nhân viên, danh mục, enrollment, chấm công, báo cáo, users, settings, audit.
+- Docker Compose chạy full stack bằng image Docker Hub.
+- CI/CD build/test/push image và smoke-test đường chạy nộp bài.
+
+Ngoài phạm vi:
+
+- Employee self-service portal.
+- Ca kíp phức tạp, nghỉ phép, overtime, payroll.
+- Multi-site/multi-camera production.
+- Production-grade anti-spoofing.
+- Backup/restore tự động và monitoring chuyên sâu.
+- Kubernetes/Helm.
+
+## Hướng mở rộng
+
+- Tích hợp model chống giả mạo khuôn mặt, camera depth hoặc challenge-response.
+- Thêm module chính sách chấm công: ca làm, ngày lễ, nghỉ phép, tăng ca.
+- Thêm backup định kỳ cho MySQL/MinIO/Qdrant.
+- Thêm monitoring cho queue depth, job failure, latency nhận diện.
+- Thêm offline queue cho kiosk khi mất mạng.
