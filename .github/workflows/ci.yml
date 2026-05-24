@@ -87,8 +87,10 @@ jobs:
       - name: Validate default compose config
         run: docker compose config
 
-      - name: Validate tunnel compose config
-        run: docker compose -f docker-compose.yml -f docker-compose.tunnel.yml --profile tunnel config
+      - name: Validate ngrok compose config
+        env:
+          NGROK_AUTHTOKEN: dummy-token-for-config-validation
+        run: docker compose -f docker-compose.yml -f docker-compose.ngrok.yml --profile ngrok config
 
   docker-images:
     name: Build Docker images
