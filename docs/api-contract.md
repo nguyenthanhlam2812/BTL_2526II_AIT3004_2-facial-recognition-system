@@ -16,6 +16,8 @@ Admin APIs dùng Bearer token. Kiosk endpoint dùng `X-Kiosk-Token`; khi gọi q
 
 ## Auth
 
+Ví dụ dưới đây dùng seed local trên DB mới. Với public demo, dùng password đã đổi trong `.env.docker` hoặc trong UI.
+
 ### `POST /api/auth/login`
 
 ```json
@@ -137,6 +139,7 @@ Prefix: `/api/employees`.
 | `POST` | `/api/employees` | owner/admin | Tạo employee |
 | `PUT` | `/api/employees/{employee_id}` | owner/admin | Sửa employee |
 | `DELETE` | `/api/employees/{employee_id}` | owner/admin | Xóa employee nếu chưa có enrollment/attendance |
+| `DELETE` | `/api/employees/{employee_id}?force=true` | owner | Xóa vĩnh viễn: drop embedding khỏi Qdrant, ảnh enrollment khỏi MinIO, ẩn danh lịch sử chấm công (`employee_id` -> NULL) |
 
 Create/update:
 
@@ -331,6 +334,22 @@ Patch example:
   "attendance_threshold": 0.28,
   "business_timezone": "Asia/Ho_Chi_Minh",
   "warmup_face_model": true
+}
+```
+
+Reset một số key về giá trị env/default:
+
+```json
+{
+  "keys": ["attendance_threshold", "business_timezone", "warmup_face_model"]
+}
+```
+
+Reset tất cả key editable:
+
+```json
+{
+  "keys": null
 }
 ```
 

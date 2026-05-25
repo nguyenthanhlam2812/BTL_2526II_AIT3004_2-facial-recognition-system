@@ -23,10 +23,8 @@ from backend.app.services.queue_service import (
     QueueUnavailableError,
     enqueue_enrollment_job,
 )
-from backend.app.services.qdrant_service import (
-    VectorStoreError,
-    find_duplicate_face_owner,
-)
+from backend.app.services.face_duplicate_service import find_duplicate_face_owner
+from backend.app.services.qdrant_service import VectorStoreError
 
 
 class EmployeeNotFoundError(Exception):
@@ -64,7 +62,7 @@ def create_enrollment(
         raise EmployeeNotFoundError
 
     validate_enrollment_files(files)
-    _check_enrollment_for_duplicates(files, employee_id)
+    _check_enrollment_for_duplicates(db, files, employee_id)
 
     job_id = f"job_{uuid4().hex[:12]}"
     settings = get_settings()
@@ -183,6 +181,7 @@ def validate_enrollment_files(files: list[UploadFile]) -> None:
 
 
 def _check_enrollment_for_duplicates(
+    db: Session,
     files: list[UploadFile],
     employee_id: int,
 ) -> None:
@@ -197,6 +196,7 @@ def _check_enrollment_for_duplicates(
 
         try:
             duplicate = find_duplicate_face_owner(
+                db=db,
                 embedding=result["embedding"],
                 exclude_employee_id=employee_id,
                 threshold=threshold,

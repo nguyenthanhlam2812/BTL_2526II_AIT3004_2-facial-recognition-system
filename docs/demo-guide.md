@@ -214,7 +214,7 @@ Kiosk chỉ gửi frame. Backend chỉ ghi nhận nếu khuôn mặt match emplo
 Viewer dành cho người chỉ cần xem dữ liệu, ví dụ auditor hoặc quản lý chỉ xem báo cáo. Viewer không sửa cấu hình, user, nhân viên hoặc event.
 
 **Xóa nhân viên rồi báo cáo có mất không?**
-Hệ thống chặn xóa employee nếu đã có enrollment hoặc attendance. Với nhân viên nghỉ việc, chuyển trạng thái `Tạm ngưng` để giữ lịch sử báo cáo.
+Mặc định hệ thống chặn xóa employee nếu đã có enrollment hoặc attendance. Với nhân viên nghỉ việc, chuyển trạng thái `Tạm ngưng` để giữ lịch sử báo cáo. Nếu cần xóa cả dữ liệu khuôn mặt (ví dụ yêu cầu xóa theo Nghị định 13/2023 về dữ liệu cá nhân), Owner có thể tick "Xóa vĩnh viễn" trong modal xóa: hệ thống drop embedding khỏi Qdrant, xóa ảnh enrollment trên MinIO và đặt `employee_id` của các event chấm công liên quan về NULL. Lịch sử chấm công vẫn còn ở dạng ẩn danh, aggregate báo cáo theo nhân viên thì không còn.
 
 **Đưa ảnh hoặc video trước camera thì sao?**
 Bản demo có quality gate và enrollment 3 góc, nhưng chưa phải chống giả mạo production-grade. Nếu dùng thật cần model anti-spoofing chuyên dụng, camera depth hoặc challenge-response.

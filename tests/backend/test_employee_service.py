@@ -7,7 +7,9 @@ import pytest
 from backend.app.models.attendance_event import AttendanceEvent
 from backend.app.models.employee import Employee
 from backend.app.models.enrollment import Enrollment
+from backend.app.models.enrollment_image import EnrollmentImage
 from backend.app.services import employee_service
+from backend.app.services.qdrant_service import VectorStoreError
 
 
 def seed_employee(
@@ -194,3 +196,131 @@ def test_delete_employee_rejects_employee_with_attendance_history(db_session):
         employee_service.delete_employee(db_session, employee.id)
 
     assert db_session.get(Employee, employee.id) is not None
+
+
+def _seed_enrollment_image(
+    db_session,
+    enrollment_id: int,
+    *,
+    sort_order: int,
+    object_key: str,
+    qdrant_point_id: str | None,
+) -> EnrollmentImage:
+    image = EnrollmentImage(
+        enrollment_id=enrollment_id,
+        object_key=object_key,
+        original_file_name=object_key.rsplit("/", 1)[-1],
+        content_type="image/jpeg",
+        sort_order=sort_order,
+        processing_status="success",
+        qdrant_point_id=qdrant_point_id,
+    )
+    db_session.add(image)
+    db_session.commit()
+    db_session.refresh(image)
+    return image
+
+
+def test_force_delete_cleans_biometric_and_anonymises_attendance(
+    db_session,
+    monkeypatch,
+):
+    employee = seed_employee(db_session, employee_code="E-FORCE")
+    enrollment = seed_enrollment(
+        db_session,
+        employee.id,
+        status="success",
+        processed_count=2,
+        created_at=datetime.utcnow(),
+    )
+    _seed_enrollment_image(
+        db_session,
+        enrollment.id,
+        sort_order=1,
+        object_key="enrollments/job_x/01_a.jpg",
+        qdrant_point_id="11",
+    )
+    _seed_enrollment_image(
+        db_session,
+        enrollment.id,
+        sort_order=2,
+        object_key="enrollments/job_x/02_b.jpg",
+        qdrant_point_id="12",
+    )
+    event = AttendanceEvent(
+        employee_id=employee.id,
+        action_type="check_in",
+        attendance_status="recorded",
+    )
+    db_session.add(event)
+    db_session.commit()
+    db_session.refresh(event)
+    event_id = event.id
+
+    qdrant_calls: list[list[int]] = []
+    minio_calls: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(
+        employee_service,
+        "delete_face_embeddings",
+        lambda ids: qdrant_calls.append(list(ids)),
+    )
+    monkeypatch.setattr(
+        employee_service,
+        "delete_objects",
+        lambda bucket, keys: minio_calls.append((bucket, list(keys))),
+    )
+
+    stats = employee_service.force_delete_employee(db_session, employee.id)
+
+    assert stats == {
+        "qdrant_points_deleted": 2,
+        "minio_objects_deleted": 2,
+        "attendance_events_anonymized": 1,
+    }
+    assert db_session.get(Employee, employee.id) is None
+    assert qdrant_calls == [[11, 12]]
+    assert minio_calls[0][0] == "enrollments"
+    assert set(minio_calls[0][1]) == {
+        "enrollments/job_x/01_a.jpg",
+        "enrollments/job_x/02_b.jpg",
+    }
+
+    remaining_event = db_session.get(AttendanceEvent, event_id)
+    assert remaining_event is not None
+    assert remaining_event.employee_id is None
+
+
+def test_force_delete_returns_none_when_employee_missing(db_session):
+    assert employee_service.force_delete_employee(db_session, 99999) is None
+
+
+def test_force_delete_completes_even_when_qdrant_fails(db_session, monkeypatch):
+    employee = seed_employee(db_session, employee_code="E-RESILIENT")
+    enrollment = seed_enrollment(
+        db_session,
+        employee.id,
+        status="success",
+        created_at=datetime.utcnow(),
+    )
+    _seed_enrollment_image(
+        db_session,
+        enrollment.id,
+        sort_order=1,
+        object_key="enrollments/job_y/01_a.jpg",
+        qdrant_point_id="21",
+    )
+
+    def raise_vector_store(_ids):
+        raise VectorStoreError("Qdrant down")
+
+    monkeypatch.setattr(
+        employee_service, "delete_face_embeddings", raise_vector_store
+    )
+    monkeypatch.setattr(
+        employee_service, "delete_objects", lambda *_args, **_kwargs: None
+    )
+
+    stats = employee_service.force_delete_employee(db_session, employee.id)
+
+    assert stats is not None
+    assert db_session.get(Employee, employee.id) is None

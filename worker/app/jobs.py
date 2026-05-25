@@ -22,9 +22,9 @@ from backend.app.services.qdrant_service import (
     FaceSearchResult,
     VectorStoreError,
     delete_face_embeddings,
-    find_duplicate_face_owner,
     upsert_face_embedding,
 )
+from backend.app.services.face_duplicate_service import find_duplicate_face_owner
 
 
 logger = logging.getLogger(__name__)
@@ -106,6 +106,7 @@ def process_enrollment_job(payload: dict[str, Any]) -> dict[str, Any]:
 
             try:
                 duplicate_match = find_duplicate_face_owner(
+                    db=db,
                     embedding=embedding,
                     exclude_employee_id=enrollment.employee_id,
                     threshold=duplicate_threshold,

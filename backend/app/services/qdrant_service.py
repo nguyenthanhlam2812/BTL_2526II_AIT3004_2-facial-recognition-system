@@ -144,27 +144,3 @@ def delete_face_embeddings(point_ids: list[str | int]) -> None:
         )
     except Exception as exc:
         raise VectorStoreError("Cannot delete embeddings from Qdrant.") from exc
-
-
-def find_duplicate_face_owner(
-    *,
-    embedding: list[float],
-    exclude_employee_id: int,
-    threshold: float,
-    limit: int = 10,
-) -> FaceSearchResult | None:
-    """Return the highest-scoring match owned by a different employee, or None.
-
-    Scans the top-`limit` neighbours to avoid being shadowed by many points
-    belonging to `exclude_employee_id`.
-    """
-    candidates = search_face_embeddings(embedding=embedding, limit=limit)
-    for candidate in candidates:
-        if candidate.employee_id is None:
-            continue
-        if candidate.employee_id == exclude_employee_id:
-            continue
-        if candidate.score < threshold:
-            return None
-        return candidate
-    return None

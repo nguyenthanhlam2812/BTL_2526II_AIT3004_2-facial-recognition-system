@@ -45,7 +45,12 @@ export async function updateEmployee(id: number, payload: EmployeeCreate): Promi
   return data;
 }
 
-export async function deleteEmployee(id: number): Promise<{ ok: boolean }> {
-  const { data } = await api.delete<{ ok: boolean }>(`/employees/${id}`);
+export async function deleteEmployee(
+  id: number,
+  options?: { force?: boolean },
+): Promise<{ ok: boolean }> {
+  const { data } = await api.delete<{ ok: boolean }>(`/employees/${id}`, {
+    params: options?.force ? { force: true } : undefined,
+  });
   return data;
 }

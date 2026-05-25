@@ -219,3 +219,41 @@ def test_delete_employee_rejects_employee_with_attendance_history(client, db_ses
 
     assert delete_response.status_code == 409
     assert "Tạm ngưng" in delete_response.json()["detail"]
+
+
+def test_force_delete_employee_requires_owner_role(client, db_session, admin_user):
+    admin_user.role = "admin"
+    db_session.add(admin_user)
+    db_session.commit()
+
+    employee = seed_employee(db_session, employee_code="E-LOCKED", department="IT")
+
+    response = client.delete(f"/api/employees/{employee.id}?force=true")
+
+    assert response.status_code == 403
+    assert "Owner role is required" in response.json()["detail"]
+    assert db_session.get(Employee, employee.id) is not None
+
+
+def test_force_delete_employee_owner_can_remove_with_related_data(
+    client, db_session, monkeypatch
+):
+    from backend.app.services import employee_service
+
+    employee = seed_employee(db_session, employee_code="E-FORCE", department="IT")
+    seed_enrollment(
+        db_session,
+        employee.id,
+        status="success",
+        processed_count=2,
+        created_at=datetime.utcnow(),
+    )
+
+    monkeypatch.setattr(employee_service, "delete_face_embeddings", lambda _ids: None)
+    monkeypatch.setattr(employee_service, "delete_objects", lambda *_args, **_kwargs: None)
+
+    response = client.delete(f"/api/employees/{employee.id}?force=true")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert db_session.get(Employee, employee.id) is None

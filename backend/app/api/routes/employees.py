@@ -1,10 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from backend.app.api.deps import require_admin, require_operator
+from backend.app.api.deps import (
+    ADMIN_WRITE_ROLES,
+    get_current_user,
+    require_admin,
+    require_operator,
+)
 from backend.app.db.session import get_db
 from backend.app.models.employee import Employee
-from backend.app.models.user import User
+from backend.app.models.user import USER_ROLE_OWNER, User
 from backend.app.schemas.employee import (
     DeleteResponse,
     EmployeeCreate,
@@ -19,6 +24,7 @@ from backend.app.services.employee_service import (
     InvalidPositionError,
     create_employee as create_employee_service,
     delete_employee as delete_employee_service,
+    force_delete_employee as force_delete_employee_service,
     list_departments as list_departments_service,
     list_employees as list_employees_service,
     update_employee as update_employee_service,
@@ -135,14 +141,48 @@ def update_employee(
 @router.delete("/{employee_id}", response_model=DeleteResponse)
 def delete_employee(
     employee_id: int,
+    force: bool = Query(default=False),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(get_current_user),
 ) -> DeleteResponse:
+    # Force delete removes biometric data and is owner-only.
+    # Normal delete keeps the operator gate (owner OR admin).
+    if force:
+        if current_user.role != USER_ROLE_OWNER:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Owner role is required to force delete an employee.",
+            )
+    elif current_user.role not in ADMIN_WRITE_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Owner or admin role is required.",
+        )
+
     target = db.get(Employee, employee_id)
     target_label = (
         f"{target.employee_code} - {target.full_name}" if target is not None else None
     )
     target_code = target.employee_code if target is not None else None
+
+    if force:
+        stats = force_delete_employee_service(db, employee_id)
+        if stats is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Employee not found.",
+            )
+        record_audit_log(
+            db,
+            actor=current_user,
+            action="employee.force_delete",
+            resource_type="employee",
+            resource_id=employee_id,
+            resource_label=target_label,
+            metadata={"employee_code": target_code, **stats},
+        )
+        return DeleteResponse(ok=True)
+
     try:
         deleted = delete_employee_service(db, employee_id)
     except EmployeeHasRelatedDataError as exc:

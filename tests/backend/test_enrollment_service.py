@@ -152,7 +152,7 @@ def _mock_analyze_failed(image_bytes: bytes) -> dict:
     return {"status": "failed", "error_message": "No face detected."}
 
 
-def test_check_enrollment_raises_when_duplicate_face_found(monkeypatch):
+def test_check_enrollment_raises_when_duplicate_face_found(db_session, monkeypatch):
     monkeypatch.setattr(enrollment_service, "analyze_image_bytes", _mock_analyze_success)
     monkeypatch.setattr(
         enrollment_service,
@@ -165,13 +165,17 @@ def test_check_enrollment_raises_when_duplicate_face_found(monkeypatch):
     files = [make_upload_file("face.jpg")]
 
     with pytest.raises(enrollment_service.DuplicateFaceEnrollmentError) as exc_info:
-        enrollment_service._check_enrollment_for_duplicates(files, employee_id=7)
+        enrollment_service._check_enrollment_for_duplicates(
+            db_session,
+            files,
+            employee_id=7,
+        )
 
     assert exc_info.value.employee_id == 99
     assert "đăng ký cho nhân viên #99" in str(exc_info.value)
 
 
-def test_check_enrollment_skips_image_when_analysis_fails(monkeypatch):
+def test_check_enrollment_skips_image_when_analysis_fails(db_session, monkeypatch):
     monkeypatch.setattr(enrollment_service, "analyze_image_bytes", _mock_analyze_failed)
 
     called = []
@@ -182,12 +186,16 @@ def test_check_enrollment_skips_image_when_analysis_fails(monkeypatch):
     )
 
     files = [make_upload_file("face.jpg"), make_upload_file("face2.jpg")]
-    enrollment_service._check_enrollment_for_duplicates(files, employee_id=7)
+    enrollment_service._check_enrollment_for_duplicates(
+        db_session,
+        files,
+        employee_id=7,
+    )
 
     assert called == []
 
 
-def test_check_enrollment_fails_open_when_qdrant_unavailable(monkeypatch):
+def test_check_enrollment_fails_open_when_qdrant_unavailable(db_session, monkeypatch):
     monkeypatch.setattr(enrollment_service, "analyze_image_bytes", _mock_analyze_success)
     monkeypatch.setattr(
         enrollment_service,
@@ -197,10 +205,14 @@ def test_check_enrollment_fails_open_when_qdrant_unavailable(monkeypatch):
 
     files = [make_upload_file("face.jpg")]
     # Should not raise — fail open so the worker guard can catch it later
-    enrollment_service._check_enrollment_for_duplicates(files, employee_id=7)
+    enrollment_service._check_enrollment_for_duplicates(
+        db_session,
+        files,
+        employee_id=7,
+    )
 
 
-def test_check_enrollment_skips_same_employee(monkeypatch):
+def test_check_enrollment_skips_same_employee(db_session, monkeypatch):
     monkeypatch.setattr(enrollment_service, "analyze_image_bytes", _mock_analyze_success)
     # find_duplicate_face_owner returning None means "same employee or below threshold"
     monkeypatch.setattr(
@@ -210,7 +222,11 @@ def test_check_enrollment_skips_same_employee(monkeypatch):
     )
 
     files = [make_upload_file("face.jpg")]
-    enrollment_service._check_enrollment_for_duplicates(files, employee_id=7)
+    enrollment_service._check_enrollment_for_duplicates(
+        db_session,
+        files,
+        employee_id=7,
+    )
 
 
 def test_create_enrollment_returns_409_on_duplicate_face(db_session, monkeypatch):
