@@ -41,25 +41,23 @@ admin / admin123
 
 Seed admin chỉ tạo khi DB chưa có user. Nếu đã đổi mật khẩu trong UI, restart container không ghi đè lại.
 
-Dependency chính nằm trong `requirements/backend.txt`, `requirements/worker.txt`, `requirements/test.txt`, `frontend/package.json` và root `package.json`.
+Dependency chính nằm trong `requirements/backend.txt`, `requirements/worker.txt`, `requirements/test.txt` và `frontend/package.json`.
+
+## Demo
+
+Ảnh demo được lưu trong repo để giảng viên có thể xem nhanh giao diện trước khi chạy Docker. Video demo nên nộp bằng link ngoài như Google Drive/YouTube hoặc trong phần mô tả nộp bài; không commit trực tiếp file `.mp4` lớn vào repo.
+
+| Màn hình đăng nhập | Dashboard quản trị |
+| --- | --- |
+| ![Login screen](docs/assets/demo/login.png) | ![Admin dashboard](docs/assets/demo/dashboard.png) |
+
+| Kiosk chấm công |
+| --- |
+| ![Kiosk screen](docs/assets/demo/kiosk.png) |
 
 ## Kiến trúc
 
-```mermaid
-flowchart LR
-    Admin["Admin browser"] --> Nginx["Nginx reverse proxy"]
-    Kiosk["Kiosk browser"] --> Nginx
-    Nginx -->|"/*"| Frontend["React SPA"]
-    Nginx -->|"/api/*"| Backend["FastAPI"]
-    Backend --> MySQL["MySQL"]
-    Backend --> Redis["Redis"]
-    Backend --> MinIO["MinIO"]
-    Backend --> Qdrant["Qdrant"]
-    Redis --> Worker["RQ worker"]
-    Worker --> MinIO
-    Worker --> Qdrant
-    Worker --> MySQL
-```
+![Layered architecture](docs/assets/architecture.svg)
 
 Thành phần chính:
 
@@ -114,7 +112,9 @@ Không có public signup. Tài khoản admin console do `owner` tạo. Hồ sơ 
 | Load balancer | Nginx đứng trước frontend/backend |
 | Docker Compose | `docker-compose.yml` chạy toàn bộ stack |
 | Docker Hub | 4 image: backend, worker, frontend, nginx |
-| CI/CD | GitHub Actions test/build/push image và smoke-test stack |
+| Điểm cộng | GitHub Actions CI/CD, Redis cache/gate, public demo bằng Ngrok HTTPS |
+
+Repo không claim các hạng mục chưa triển khai production-grade như Kubernetes/Helm, monitoring sâu hoặc backup/restore tự động. Các phần này được ghi rõ ở mục giới hạn để tránh mô tả quá khả năng bản nộp.
 
 ## Cấu hình môi trường
 
@@ -245,5 +245,7 @@ Chi tiết demo và câu trả lời Q&A nằm trong [docs/demo-guide.md](docs/d
 
 - [docs/architecture.md](docs/architecture.md): kiến trúc, scope, data flow, limitation.
 - [docs/diagrams.md](docs/diagrams.md): các sơ đồ kỹ thuật chính.
+- [docs/mysql-schema.sql](docs/mysql-schema.sql): MySQL DDL source để render/đối chiếu ERD.
 - [docs/api-contract.md](docs/api-contract.md): API contract.
 - [docs/demo-guide.md](docs/demo-guide.md): demo flow, dữ liệu demo, xử lý lỗi, Q&A.
+- [docs/submission-checklist.md](docs/submission-checklist.md): checklist trước khi đóng GitHub và gửi bài.

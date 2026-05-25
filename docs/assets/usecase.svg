@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 900" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <pattern id="small-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#f7f7f7" stroke-width="0.4"/>
+    </pattern>
+    <marker id="generalization-arrow" viewBox="0 0 12 12" markerWidth="14" markerHeight="14" refX="11" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M 0 0 L 11 6 L 0 12 Z" fill="#fff" stroke="#222" stroke-width="1.25"/>
+    </marker>
+    <marker id="open-arrow" viewBox="0 0 10 10" markerWidth="12" markerHeight="12" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M 0 0 L 9 5 L 0 10" fill="none" stroke="#222" stroke-width="1.25"/>
+    </marker>
+  </defs>
+
+  <style>
+    text { fill: #111; }
+    .system { fill: #fff; stroke: #222; stroke-width: 1.8; }
+    .system-title { font-size: 16px; font-weight: 700; text-anchor: middle; }
+    .actor-line { fill: none; stroke: #111; stroke-width: 2; stroke-linecap: round; }
+    .actor-head { fill: #fff; stroke: #111; stroke-width: 2; }
+    .actor-label { text-anchor: middle; font-size: 13px; font-weight: 700; }
+    .usecase { fill: #fff; stroke: #222; stroke-width: 1.75; }
+    .usecase-text { text-anchor: middle; dominant-baseline: middle; }
+    .assoc { stroke: #222; stroke-width: 1.45; fill: none; }
+    .generalization { stroke: #222; stroke-width: 1.45; fill: none; }
+    .extend { stroke: #222; stroke-width: 1.35; fill: none; stroke-dasharray: 7,5; }
+    .rel-label { text-anchor: middle; font-size: 11px; font-style: italic; fill: #444; }
+  </style>
+
+  <rect x="0" y="0" width="1180" height="900" fill="#fff"/>
+  <rect x="0" y="0" width="1180" height="900" fill="url(#small-grid)" opacity="0.45"/>
+
+  <rect class="system" x="270" y="42" width="870" height="840"/>
+  <text class="system-title" x="705" y="70">Hệ thống chấm công khuôn mặt</text>
+
+  <g id="actor-employee">
+    <circle class="actor-head" cx="105" cy="100" r="11"/>
+    <line class="actor-line" x1="105" y1="111" x2="105" y2="145"/>
+    <line class="actor-line" x1="84" y1="124" x2="126" y2="124"/>
+    <line class="actor-line" x1="105" y1="145" x2="89" y2="170"/>
+    <line class="actor-line" x1="105" y1="145" x2="121" y2="170"/>
+    <text class="actor-label" x="105" y="190">Nhân viên</text>
+  </g>
+
+  <g id="actor-viewer">
+    <circle class="actor-head" cx="105" cy="270" r="11"/>
+    <line class="actor-line" x1="105" y1="281" x2="105" y2="315"/>
+    <line class="actor-line" x1="84" y1="294" x2="126" y2="294"/>
+    <line class="actor-line" x1="105" y1="315" x2="89" y2="340"/>
+    <line class="actor-line" x1="105" y1="315" x2="121" y2="340"/>
+    <text class="actor-label" x="105" y="360">Viewer</text>
+  </g>
+
+  <g id="actor-admin">
+    <circle class="actor-head" cx="105" cy="470" r="11"/>
+    <line class="actor-line" x1="105" y1="481" x2="105" y2="515"/>
+    <line class="actor-line" x1="84" y1="494" x2="126" y2="494"/>
+    <line class="actor-line" x1="105" y1="515" x2="89" y2="540"/>
+    <line class="actor-line" x1="105" y1="515" x2="121" y2="540"/>
+    <text class="actor-label" x="105" y="560">Admin</text>
+  </g>
+
+  <g id="actor-owner">
+    <circle class="actor-head" cx="105" cy="700" r="11"/>
+    <line class="actor-line" x1="105" y1="711" x2="105" y2="745"/>
+    <line class="actor-line" x1="84" y1="724" x2="126" y2="724"/>
+    <line class="actor-line" x1="105" y1="745" x2="89" y2="770"/>
+    <line class="actor-line" x1="105" y1="745" x2="121" y2="770"/>
+    <text class="actor-label" x="105" y="790">Owner</text>
+  </g>
+
+  <g id="uc-kiosk">
+    <ellipse class="usecase" cx="520" cy="125" rx="142" ry="34"/>
+    <text class="usecase-text" x="520" y="129">Check-in / check-out kiosk</text>
+  </g>
+
+  <g id="uc-view">
+    <ellipse class="usecase" cx="500" cy="285" rx="150" ry="44"/>
+    <text class="usecase-text" x="500" y="277">Xem dashboard, nhân viên,</text>
+    <text class="usecase-text" x="500" y="296">chấm công, báo cáo</text>
+  </g>
+
+  <g id="uc-export">
+    <ellipse class="usecase" cx="855" cy="285" rx="102" ry="34"/>
+    <text class="usecase-text" x="855" y="289">Export CSV</text>
+  </g>
+
+  <g id="uc-lookups">
+    <ellipse class="usecase" cx="500" cy="410" rx="135" ry="39"/>
+    <text class="usecase-text" x="500" y="402">Quản lý danh mục</text>
+    <text class="usecase-text" x="500" y="421">phòng ban / chức vụ</text>
+  </g>
+
+  <g id="uc-employees">
+    <ellipse class="usecase" cx="500" cy="500" rx="145" ry="40"/>
+    <text class="usecase-text" x="500" y="492">CRUD nhân viên</text>
+    <text class="usecase-text" x="500" y="511">và enrollment khuôn mặt</text>
+  </g>
+
+  <g id="uc-attendance-edit">
+    <ellipse class="usecase" cx="500" cy="590" rx="130" ry="34"/>
+    <text class="usecase-text" x="500" y="594">Sửa / xóa chấm công</text>
+  </g>
+
+  <g id="uc-accounts">
+    <ellipse class="usecase" cx="500" cy="675" rx="140" ry="34"/>
+    <text class="usecase-text" x="500" y="679">Quản lý tài khoản admin</text>
+  </g>
+
+  <g id="uc-settings">
+    <ellipse class="usecase" cx="500" cy="755" rx="122" ry="34"/>
+    <text class="usecase-text" x="500" y="759">Cấu hình runtime</text>
+  </g>
+
+  <g id="uc-audit">
+    <ellipse class="usecase" cx="500" cy="835" rx="122" ry="34"/>
+    <text class="usecase-text" x="500" y="839">Xem nhật ký audit</text>
+  </g>
+
+  <line class="generalization" x1="105" y1="458" x2="105" y2="366" marker-end="url(#generalization-arrow)"/>
+  <text class="rel-label" x="154" y="414">generalization</text>
+
+  <line class="generalization" x1="105" y1="688" x2="105" y2="566" marker-end="url(#generalization-arrow)"/>
+  <text class="rel-label" x="154" y="628">generalization</text>
+
+  <line class="assoc" x1="126" y1="124" x2="378" y2="124"/>
+  <line class="assoc" x1="126" y1="294" x2="350" y2="285"/>
+  <line class="assoc" x1="126" y1="494" x2="365" y2="410"/>
+  <line class="assoc" x1="126" y1="494" x2="355" y2="500"/>
+  <line class="assoc" x1="126" y1="494" x2="370" y2="590"/>
+  <line class="assoc" x1="126" y1="724" x2="360" y2="675"/>
+  <line class="assoc" x1="126" y1="724" x2="378" y2="755"/>
+  <line class="assoc" x1="126" y1="724" x2="378" y2="835"/>
+
+  <line class="extend" x1="753" y1="285" x2="650" y2="285" marker-end="url(#open-arrow)"/>
+  <text class="rel-label" x="702" y="274">«extend»</text>
+</svg>
