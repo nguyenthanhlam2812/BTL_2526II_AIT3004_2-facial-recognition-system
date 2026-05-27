@@ -103,9 +103,6 @@ def recognize_attendance_frame(
                 record_event=record_unmatched,
             )
 
-        if error_message == NO_FACE_MESSAGE:
-            _clear_camera_match_gate(camera_id=camera_id, action_type=action_type)
-
         return _save_unmatched_event(
             db,
             action_type=action_type,

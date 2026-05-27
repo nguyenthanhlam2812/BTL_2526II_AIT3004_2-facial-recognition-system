@@ -34,6 +34,7 @@ type ScanRequest = {
 
 const AUTO_SCAN_INTERVAL_MS = 1600;
 const AUTO_EMPTY_COOLDOWN_MS = 1200;
+const AUTO_MATCHED_COOLDOWN_MS = 10000;
 const AUTO_UNMATCHED_COOLDOWN_MS = 3500;
 const HEALTHCHECK_TIMEOUT_MS = 3000;
 const HEALTHCHECK_RETRY_INTERVAL_MS = 5000;
@@ -214,7 +215,7 @@ export default function KioskPage() {
         }
 
         if (data.matched) {
-          autoCooldownUntilRef.current = Date.now() + AUTO_EMPTY_COOLDOWN_MS;
+          autoCooldownUntilRef.current = Date.now() + AUTO_MATCHED_COOLDOWN_MS;
         } else {
           autoCooldownUntilRef.current = Date.now() + AUTO_UNMATCHED_COOLDOWN_MS;
         }

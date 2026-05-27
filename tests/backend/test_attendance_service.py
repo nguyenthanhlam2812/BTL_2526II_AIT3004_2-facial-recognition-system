@@ -606,7 +606,7 @@ def test_recognize_attendance_frame_uses_server_recorded_time_for_dedupe(
     assert db_session.scalar(select(func.count()).select_from(AttendanceEvent)) == 1
 
 
-def test_recognize_attendance_frame_clears_camera_gate_after_no_face(
+def test_recognize_attendance_frame_keeps_camera_gate_after_no_face_jitter(
     db_session,
     monkeypatch,
 ):
@@ -686,9 +686,9 @@ def test_recognize_attendance_frame_clears_camera_gate_after_no_face(
 
     assert no_face_response.matched is False
     assert no_face_response.event_id is None
-    assert second_response.event_id is not None
-    assert second_response.event_id != first_response.event_id
-    assert db_session.scalar(select(func.count()).select_from(AttendanceEvent)) == 2
+    assert second_response.event_id == first_response.event_id
+    assert second_response.message == "Check-in already recorded recently."
+    assert db_session.scalar(select(func.count()).select_from(AttendanceEvent)) == 1
 
 
 def test_recognize_attendance_frame_skips_missing_employee_match(

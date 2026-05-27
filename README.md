@@ -247,5 +247,6 @@ Chi tiết demo và câu trả lời Q&A nằm trong [docs/demo-guide.md](docs/d
 - [docs/diagrams.md](docs/diagrams.md): các sơ đồ kỹ thuật chính.
 - [docs/mysql-schema.sql](docs/mysql-schema.sql): MySQL DDL source để render/đối chiếu ERD.
 - [docs/api-contract.md](docs/api-contract.md): API contract.
+- [docs/team-contribution.md](docs/team-contribution.md): phân công công việc theo thành viên.
 - [docs/demo-guide.md](docs/demo-guide.md): demo flow, dữ liệu demo, xử lý lỗi, Q&A.
 - [docs/submission-checklist.md](docs/submission-checklist.md): checklist trước khi đóng GitHub và gửi bài.
