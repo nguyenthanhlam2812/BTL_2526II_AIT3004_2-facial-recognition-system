@@ -71,6 +71,39 @@ class AttendanceDailyReportListResponse(BaseModel):
     total: int
 
 
+class WorkSessionRead(BaseModel):
+    """A pair-matched work session within a business day.
+
+    - ``check_in_at`` / ``check_out_at`` are business-local naive datetimes.
+    - A complete session has both, with non-null ``duration_minutes``.
+    - An incomplete session (no check-out) has ``is_complete=False`` and
+      ``check_out_at = duration_minutes = None``.
+    """
+
+    check_in_at: datetime | None
+    check_out_at: datetime | None
+    duration_minutes: int | None
+    is_complete: bool
+
+
+class DailyWorkSessionsRead(BaseModel):
+    """Per-employee per-day breakdown of paired work sessions."""
+
+    date: date
+    employee_id: int
+    employee_code: str
+    full_name: str
+    department: str
+    sessions: list[WorkSessionRead]
+    total_work_minutes: int
+    summary_status: AttendanceDailyReportStatus
+
+
+class DailyWorkSessionsListResponse(BaseModel):
+    items: list[DailyWorkSessionsRead]
+    total: int
+
+
 class AttendanceDashboardTrendPoint(BaseModel):
     date: date
     check_in_count: int

@@ -5,6 +5,7 @@ import type {
   AttendanceDailyReportStatus,
   AttendanceEventsDeleteResponse,
   AttendanceEventListResponse,
+  DailyWorkSessionsListResponse,
 } from "@/shared/types/api";
 
 export async function listAttendanceEvents(params?: {
@@ -94,6 +95,23 @@ export async function getAttendanceDashboardSummary(params?: {
 }): Promise<AttendanceDashboardSummaryResponse> {
   const { data } = await api.get<AttendanceDashboardSummaryResponse>(
     "/attendance/reports/dashboard-summary",
+    { params },
+  );
+  return data;
+}
+
+export async function listDailyWorkSessions(params?: {
+  date?: string;
+  from?: string;
+  to?: string;
+  employee_id?: number;
+  department?: string;
+  status?: AttendanceDailyReportStatus;
+  page?: number;
+  page_size?: number;
+}): Promise<DailyWorkSessionsListResponse> {
+  const { data } = await api.get<DailyWorkSessionsListResponse>(
+    "/attendance/reports/sessions",
     { params },
   );
   return data;

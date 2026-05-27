@@ -307,15 +307,57 @@ Response list:
 
 | Method | Path | Ý nghĩa |
 | --- | --- | --- |
-| `GET` | `/api/attendance/reports/daily` | Báo cáo ngày |
+| `GET` | `/api/attendance/reports/daily` | Báo cáo ngày (bracketing: chỉ check-in sớm nhất + check-out muộn nhất) |
 | `GET` | `/api/attendance/reports/daily/export.csv` | Export báo cáo ngày |
+| `GET` | `/api/attendance/reports/sessions` | Báo cáo ngày kiểu pair matching: N session/ngày + total work minutes |
 | `GET` | `/api/attendance/reports/dashboard-summary` | Summary cho dashboard |
 
-Daily query: `date`, `from`, `to`, `employee_id`, `department`, `status`, `page`, `page_size`.
+Daily và sessions query share filter: `date`, `from`, `to`, `employee_id`, `department`, `status`, `page`, `page_size`.
 
 `status`: `present`, `late`, `missing`.
 
 Dashboard query: `days=7` hoặc `days=30`.
+
+`reports/sessions` response shape:
+
+```json
+{
+  "items": [
+    {
+      "date": "2026-05-27",
+      "employee_id": 1,
+      "employee_code": "E001",
+      "full_name": "Nguyen Van A",
+      "department": "IT",
+      "sessions": [
+        {
+          "check_in_at": "2026-05-27T08:00:00",
+          "check_out_at": "2026-05-27T11:30:00",
+          "duration_minutes": 210,
+          "is_complete": true
+        },
+        {
+          "check_in_at": "2026-05-27T12:30:00",
+          "check_out_at": "2026-05-27T17:30:00",
+          "duration_minutes": 300,
+          "is_complete": true
+        }
+      ],
+      "total_work_minutes": 510,
+      "summary_status": "present"
+    }
+  ],
+  "total": 1
+}
+```
+
+Pair-matching rules:
+- Greedy: mỗi check-out ghép với check-in sớm nhất chưa được pair.
+- Duplicate check-in khi 1 session đang mở → bỏ qua, giữ check-in sớm nhất.
+- Orphan check-out (không có check-in trước) → bỏ qua silently.
+- Orphan check-in (không có check-out) → trở thành session incomplete (`is_complete=false`, `duration_minutes=null`).
+- Cross-midnight (làm đêm): session thuộc business day của check-in.
+- `total_work_minutes` chỉ cộng các session complete.
 
 ## System settings
 

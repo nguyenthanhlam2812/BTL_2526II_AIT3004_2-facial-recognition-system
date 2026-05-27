@@ -168,6 +168,29 @@ export interface AttendanceDailyReportListResponse {
   total: number;
 }
 
+export interface WorkSession {
+  check_in_at: string | null;
+  check_out_at: string | null;
+  duration_minutes: number | null;
+  is_complete: boolean;
+}
+
+export interface DailyWorkSessions {
+  date: string;
+  employee_id: number;
+  employee_code: string;
+  full_name: string;
+  department: string;
+  sessions: WorkSession[];
+  total_work_minutes: number;
+  summary_status: AttendanceDailyReportStatus;
+}
+
+export interface DailyWorkSessionsListResponse {
+  items: DailyWorkSessions[];
+  total: number;
+}
+
 export interface AttendanceDashboardTodaySummary {
   present: number;
   late: number;

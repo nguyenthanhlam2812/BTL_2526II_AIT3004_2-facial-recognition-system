@@ -9,6 +9,9 @@ from backend.app.schemas.attendance import (
     AttendanceDashboardSummaryResponse,
     AttendanceDashboardTodaySummary,
     AttendanceDashboardTrendPoint,
+    DailyWorkSessionsListResponse,
+    DailyWorkSessionsRead,
+    WorkSessionRead,
 )
 from backend.app.services.attendance_service import AttendanceValidationError
 
@@ -156,3 +159,76 @@ def test_get_dashboard_summary_rejects_unsupported_range(client):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "Dashboard summary supports only 7 or 30 days."
+
+
+def test_get_daily_work_sessions_returns_service_payload(client, monkeypatch):
+    captured = {}
+
+    def fake_service(_db, **kwargs):
+        captured.update(kwargs)
+        return DailyWorkSessionsListResponse(
+            items=[
+                DailyWorkSessionsRead(
+                    date=date(2026, 5, 11),
+                    employee_id=1,
+                    employee_code="E001",
+                    full_name="Nguyen Van A",
+                    department="IT",
+                    sessions=[
+                        WorkSessionRead(
+                            check_in_at=datetime(2026, 5, 11, 8, 0, 0),
+                            check_out_at=datetime(2026, 5, 11, 11, 30, 0),
+                            duration_minutes=210,
+                            is_complete=True,
+                        ),
+                        WorkSessionRead(
+                            check_in_at=datetime(2026, 5, 11, 12, 30, 0),
+                            check_out_at=datetime(2026, 5, 11, 17, 30, 0),
+                            duration_minutes=300,
+                            is_complete=True,
+                        ),
+                    ],
+                    total_work_minutes=510,
+                    summary_status="present",
+                )
+            ],
+            total=1,
+        )
+
+    monkeypatch.setattr(
+        attendance_route,
+        "list_daily_work_sessions_service",
+        fake_service,
+    )
+
+    response = client.get(
+        "/api/attendance/reports/sessions",
+        params={"date": "2026-05-11", "employee_id": 1},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert len(body["items"][0]["sessions"]) == 2
+    assert body["items"][0]["total_work_minutes"] == 510
+    assert captured["date_"] == date(2026, 5, 11)
+    assert captured["employee_id"] == 1
+
+
+def test_get_daily_work_sessions_returns_400_for_invalid_range(client, monkeypatch):
+    def fake_service(_db, **_kwargs):
+        raise AttendanceValidationError("Report range cannot exceed 31 days.")
+
+    monkeypatch.setattr(
+        attendance_route,
+        "list_daily_work_sessions_service",
+        fake_service,
+    )
+
+    response = client.get(
+        "/api/attendance/reports/sessions",
+        params={"from": "2026-01-01", "to": "2026-12-31"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Report range cannot exceed 31 days."

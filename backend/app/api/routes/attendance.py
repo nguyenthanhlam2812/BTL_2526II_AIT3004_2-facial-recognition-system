@@ -29,6 +29,7 @@ from backend.app.schemas.attendance import (
     AttendanceEventListResponse,
     AttendanceFrameResponse,
     AttendanceStatus,
+    DailyWorkSessionsListResponse,
 )
 from backend.app.services.attendance_service import (
     AttendanceInfrastructureError,
@@ -39,6 +40,7 @@ from backend.app.services.attendance_service import (
     export_attendance_events_csv as export_attendance_events_csv_service,
     get_attendance_dashboard_summary as get_attendance_dashboard_summary_service,
     list_daily_attendance_reports as list_daily_attendance_reports_service,
+    list_daily_work_sessions as list_daily_work_sessions_service,
     list_attendance_events as list_attendance_events_service,
     recognize_attendance_frame as recognize_attendance_frame_service,
 )
@@ -117,6 +119,45 @@ def list_daily_attendance_reports(
 ) -> AttendanceDailyReportListResponse:
     try:
         return list_daily_attendance_reports_service(
+            db,
+            date_=date_,
+            from_=from_,
+            to=to,
+            employee_id=employee_id,
+            department=department,
+            status=status,
+            page=page,
+            page_size=page_size,
+        )
+    except AttendanceValidationError as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/reports/sessions", response_model=DailyWorkSessionsListResponse)
+def list_daily_work_sessions(
+    date_: date | None = Query(default=None, alias="date"),
+    from_: date | None = Query(default=None, alias="from"),
+    to: date | None = Query(default=None),
+    employee_id: int | None = Query(default=None),
+    department: str | None = Query(default=None),
+    status: AttendanceDailyReportStatus | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> DailyWorkSessionsListResponse:
+    """Per-employee per-day work sessions with pair matching.
+
+    Unlike ``/reports/daily`` which only returns first check-in + last
+    check-out, this endpoint pair-matches events into N work sessions per
+    day (e.g. morning/afternoon split by lunch break) and exposes
+    ``total_work_minutes`` excluding break time.
+    """
+    try:
+        return list_daily_work_sessions_service(
             db,
             date_=date_,
             from_=from_,

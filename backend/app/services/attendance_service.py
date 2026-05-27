@@ -27,6 +27,9 @@ from backend.app.schemas.attendance import (
     AttendanceEventRead,
     AttendanceFrameResponse,
     AttendanceStatus,
+    DailyWorkSessionsListResponse,
+    DailyWorkSessionsRead,
+    WorkSessionRead,
 )
 from backend.app.services import camera_gate_service
 from backend.app.services.face_analyzer import analyze_image_bytes
@@ -439,6 +442,215 @@ def export_daily_attendance_reports_csv(
             ]
         )
     return csv_buffer.getvalue()
+
+
+def list_daily_work_sessions(
+    db: Session,
+    *,
+    date_: date | None,
+    from_: date | None,
+    to: date | None,
+    employee_id: int | None,
+    department: str | None,
+    status: AttendanceDailyReportStatus | None,
+    page: int,
+    page_size: int,
+) -> DailyWorkSessionsListResponse:
+    """Pair-matched work sessions per (date, employee).
+
+    Logic phân biệt với ``list_daily_attendance_reports``:
+        Daily report dùng "bracketing" — chỉ lấy check-in sớm nhất và
+        check-out muộn nhất → mất giờ nghỉ trưa giữa các session.
+        Sessions report ghép cặp greedy → tách rõ N session/ngày
+        (sáng-chiều có nghỉ trưa, OT đêm…), tính được total work minutes.
+
+    Cross-midnight: session thuộc business day của check-in (làm đêm
+    22:00 → 06:00 hôm sau ghi vào ngày check-in).
+    """
+    rows = _build_daily_work_session_rows(
+        db,
+        date_=date_,
+        from_=from_,
+        to=to,
+        employee_id=employee_id,
+        department=department,
+        status=status,
+    )
+    total = len(rows)
+    items = rows[(page - 1) * page_size : page * page_size]
+    return DailyWorkSessionsListResponse(items=items, total=total)
+
+
+def _build_daily_work_session_rows(
+    db: Session,
+    *,
+    date_: date | None,
+    from_: date | None,
+    to: date | None,
+    employee_id: int | None,
+    department: str | None,
+    status: AttendanceDailyReportStatus | None,
+) -> list[DailyWorkSessionsRead]:
+    from_day, to_day = _resolve_report_day_range(
+        db,
+        date_=date_,
+        from_=from_,
+        to=to,
+    )
+    employees = _list_report_employees(
+        db,
+        employee_id=employee_id,
+        department=department,
+    )
+    if not employees:
+        return []
+
+    # Initialise empty rows for every (day, employee) so days with no events
+    # still appear as "missing".
+    rows_by_key: dict[tuple[date, int], DailyWorkSessionsRead] = {}
+    for current_day in _iter_days(from_day, to_day):
+        for employee in employees:
+            rows_by_key[(current_day, employee.id)] = DailyWorkSessionsRead(
+                date=current_day,
+                employee_id=employee.id,
+                employee_code=employee.employee_code,
+                full_name=employee.full_name,
+                department=employee.department,
+                sessions=[],
+                total_work_minutes=0,
+                summary_status="missing",
+            )
+
+    # Extend the upper bound by 1 day so a night-shift session starting on
+    # to_day and ending early the next morning still gets paired correctly.
+    event_time = func.coalesce(
+        AttendanceEvent.captured_at,
+        AttendanceEvent.created_at,
+    )
+    range_start_utc, range_end_utc = _business_day_range_to_utc_bounds(
+        db,
+        from_day,
+        to_day + timedelta(days=1),
+    )
+    events = db.scalars(
+        select(AttendanceEvent)
+        .where(
+            AttendanceEvent.attendance_status == "recorded",
+            AttendanceEvent.employee_id.in_([employee.id for employee in employees]),
+            event_time >= range_start_utc,
+            event_time <= range_end_utc,
+        )
+        .order_by(event_time.asc(), AttendanceEvent.id.asc())
+    ).all()
+
+    events_by_employee: dict[int, list[AttendanceEvent]] = {}
+    for event in events:
+        if event.employee_id is None:
+            continue
+        events_by_employee.setdefault(event.employee_id, []).append(event)
+
+    for emp_id, emp_events in events_by_employee.items():
+        sessions_by_day = _pair_match_sessions(db, emp_events)
+        for session_day, session_list in sessions_by_day.items():
+            row = rows_by_key.get((session_day, emp_id))
+            if row is None:
+                # Session whose check-in date falls outside the requested range
+                # (vd extended upper bound day) — skip.
+                continue
+            row.sessions = session_list
+            row.total_work_minutes = sum(
+                s.duration_minutes
+                for s in session_list
+                if s.duration_minutes is not None
+            )
+            first_check_in = next(
+                (s.check_in_at for s in session_list if s.check_in_at is not None),
+                None,
+            )
+            if first_check_in is not None:
+                row.summary_status = (
+                    "late"
+                    if first_check_in.time() > REPORT_LATE_THRESHOLD
+                    else "present"
+                )
+
+    rows = list(rows_by_key.values())
+    if status is not None:
+        rows = [r for r in rows if r.summary_status == status]
+    rows.sort(key=lambda r: (r.date, r.employee_code))
+    return rows
+
+
+def _pair_match_sessions(
+    db: Session,
+    events: list[AttendanceEvent],
+) -> dict[date, list[WorkSessionRead]]:
+    """Greedy pair matching.
+
+    Walk events in time order; first check-in opens a session, the next
+    check-out closes it. Duplicate check-ins while a session is open are
+    ignored (keep the earliest). Orphan check-outs (no open session) are
+    dropped silently — they indicate data anomaly. An open session left
+    at the end becomes an incomplete session (no check-out).
+
+    Returns sessions grouped by the check-in's business date.
+    """
+    sessions_by_day: dict[date, list[WorkSessionRead]] = {}
+    pending_check_in: AttendanceEvent | None = None
+
+    for event in events:
+        if event.action_type == "check_in":
+            if pending_check_in is None:
+                pending_check_in = event
+            # else: duplicate check-in, keep the earliest one.
+            continue
+
+        if event.action_type == "check_out":
+            if pending_check_in is None:
+                # Orphan check-out, ignore.
+                continue
+            session = _build_session(db, pending_check_in, event)
+            session_day = _event_business_date(db, pending_check_in)
+            sessions_by_day.setdefault(session_day, []).append(session)
+            pending_check_in = None
+
+    if pending_check_in is not None:
+        session = _build_session(db, pending_check_in, None)
+        session_day = _event_business_date(db, pending_check_in)
+        sessions_by_day.setdefault(session_day, []).append(session)
+
+    return sessions_by_day
+
+
+def _build_session(
+    db: Session,
+    check_in: AttendanceEvent,
+    check_out: AttendanceEvent | None,
+) -> WorkSessionRead:
+    check_in_local = _get_business_local_event_datetime(db, check_in)
+    check_out_local = (
+        _get_business_local_event_datetime(db, check_out)
+        if check_out is not None
+        else None
+    )
+    duration_minutes: int | None = None
+    if check_in_local is not None and check_out_local is not None:
+        delta = check_out_local - check_in_local
+        duration_minutes = max(0, int(delta.total_seconds() // 60))
+
+    return WorkSessionRead(
+        check_in_at=check_in_local,
+        check_out_at=check_out_local,
+        duration_minutes=duration_minutes,
+        is_complete=check_out is not None,
+    )
+
+
+def _event_business_date(db: Session, event: AttendanceEvent) -> date:
+    local = _get_business_local_event_datetime(db, event)
+    # Fallback to created_at-based date if captured_at missing and conversion
+    # somehow returns None — shouldn't happen but stay defensive.
+    return local.date() if local is not None else date.min
 
 
 def get_attendance_dashboard_summary(

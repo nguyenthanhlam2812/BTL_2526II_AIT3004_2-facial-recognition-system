@@ -144,9 +144,15 @@ Vào `Chấm công`:
 
 Vào `Báo cáo`:
 
-- Xem báo cáo ngày.
+- Xem báo cáo ngày (cột `Check-in đầu`, `Check-out cuối`, `Giờ làm`, `Trạng thái`).
+- Click icon `▸` bên trái mỗi row để xem **chi tiết session pair-matched** trong ngày (sáng-chiều có nghỉ trưa, OT đêm…).
+- Cột `Giờ làm` chỉ cộng các session đã hoàn tất (`is_complete=true`); session chưa có check-out không tính.
 - Lọc phòng ban/status.
 - Export CSV.
+
+Câu thoại về 2 cách tính:
+
+> Báo cáo ngày dùng "bracketing" — chỉ lấy check-in sớm nhất và check-out muộn nhất, đơn giản cho HR check đi muộn/vắng mặt. Sessions report ghép cặp greedy các event in-out thành N work session/ngày, dùng cho tính giờ làm thực tế trừ giờ nghỉ giữa các session. Endpoint `/api/attendance/reports/sessions` expose dữ liệu này, frontend show qua expandable row.
 
 ### 7. Audit và phân quyền
 
@@ -262,7 +268,7 @@ MinIO đang dùng để lưu ảnh enrollment gốc; snapshot chấm công là h
 - [ ] Kiosk match được nhân viên đã enroll.
 - [ ] Kiosk trả `unknown_face` cho người lạ.
 - [ ] Chấm công lọc được `recorded`, `unknown_face`, `multiple_faces`.
-- [ ] Báo cáo ngày và export CSV hoạt động.
+- [ ] Báo cáo ngày và export CSV hoạt động, expandable row hiện session pair-matched.
 - [ ] Audit log có event thao tác.
 - [ ] Viewer không có quyền ghi.
 - [ ] Nếu public demo bằng Ngrok: `localhost:4040/api/tunnels` có HTTPS URL và `/login`, `/kiosk` load được qua URL đó.

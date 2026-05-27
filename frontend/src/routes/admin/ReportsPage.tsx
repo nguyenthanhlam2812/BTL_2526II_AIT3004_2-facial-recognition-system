@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import {
+  ActionIcon,
   Alert,
   Badge,
   Button,
@@ -15,13 +16,23 @@ import {
 } from "@mantine/core";
 import { DatePickerInput } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
-import { IconAlertCircle, IconDownload, IconRefresh } from "@tabler/icons-react";
+import {
+  IconAlertCircle,
+  IconChevronRight,
+  IconDownload,
+  IconRefresh,
+} from "@tabler/icons-react";
 import {
   exportDailyAttendanceReportsCsv,
   listDailyAttendanceReports,
+  listDailyWorkSessions,
 } from "@/shared/api/attendance";
 import { listAllEmployees, listEmployeeDepartments } from "@/shared/api/employees";
-import type { AttendanceDailyReportStatus } from "@/shared/types/api";
+import type {
+  AttendanceDailyReportStatus,
+  DailyWorkSessions,
+  WorkSession,
+} from "@/shared/types/api";
 import PageHeader from "@/shared/ui/PageHeader";
 
 const PAGE_SIZE = 20;
@@ -45,6 +56,80 @@ function summaryStatusBadge(status: AttendanceDailyReportStatus) {
     <Badge color={meta.color} variant="light" size="sm">
       {meta.label}
     </Badge>
+  );
+}
+
+function formatWorkMinutes(minutes: number): string {
+  if (minutes <= 0) return "-";
+  const hours = Math.floor(minutes / 60);
+  const remaining = minutes % 60;
+  if (hours === 0) return `${remaining} phút`;
+  if (remaining === 0) return `${hours}h`;
+  return `${hours}h${String(remaining).padStart(2, "0")}`;
+}
+
+function buildSessionsKey(date: string, employeeId: number): string {
+  return `${date}::${employeeId}`;
+}
+
+function SessionsDetail({ sessions }: { sessions: WorkSession[] }) {
+  if (sessions.length === 0) {
+    return (
+      <Text size="sm" c="var(--text-secondary)" py="xs">
+        Không có session nào trong ngày (chưa có check-in được pair).
+      </Text>
+    );
+  }
+  return (
+    <Stack gap={6} py="xs">
+      <Text size="xs" fw={600} c="var(--text-secondary)" tt="uppercase">
+        Chi tiết session (pair-matched)
+      </Text>
+      <Table withTableBorder withColumnBorders verticalSpacing={4} fz="sm">
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th w={40}>#</Table.Th>
+            <Table.Th>Check-in</Table.Th>
+            <Table.Th>Check-out</Table.Th>
+            <Table.Th>Thời lượng</Table.Th>
+            <Table.Th>Trạng thái</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {sessions.map((session, index) => (
+            <Table.Tr key={index}>
+              <Table.Td className="mono">{index + 1}</Table.Td>
+              <Table.Td className="mono">
+                {session.check_in_at
+                  ? dayjs(session.check_in_at).format("HH:mm:ss")
+                  : "-"}
+              </Table.Td>
+              <Table.Td className="mono">
+                {session.check_out_at
+                  ? dayjs(session.check_out_at).format("HH:mm:ss")
+                  : "-"}
+              </Table.Td>
+              <Table.Td className="mono">
+                {session.duration_minutes !== null
+                  ? formatWorkMinutes(session.duration_minutes)
+                  : "-"}
+              </Table.Td>
+              <Table.Td>
+                {session.is_complete ? (
+                  <Badge color="teal" variant="light" size="sm">
+                    Hoàn tất
+                  </Badge>
+                ) : (
+                  <Badge color="yellow" variant="light" size="sm">
+                    Chưa check-out
+                  </Badge>
+                )}
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Stack>
   );
 }
 
@@ -134,6 +219,37 @@ export default function ReportsPage() {
     enabled: rangeError === null,
   });
 
+  // Sessions query mirrors the same filters so the expandable rows show
+  // pair-matched sessions for the visible employees/dates.
+  const { data: sessionsData } = useQuery({
+    queryKey: ["attendance-daily-sessions", { ...reportFilters, page }],
+    queryFn: () =>
+      listDailyWorkSessions({
+        ...reportFilters,
+        page,
+        page_size: PAGE_SIZE,
+      }),
+    enabled: rangeError === null,
+  });
+
+  const sessionsByKey = useMemo(() => {
+    const map = new Map<string, DailyWorkSessions>();
+    for (const item of sessionsData?.items ?? []) {
+      map.set(buildSessionsKey(item.date, item.employee_id), item);
+    }
+    return map;
+  }, [sessionsData]);
+
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  const toggleExpand = (key: string) => {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const exportCsvMutation = useMutation({
     mutationFn: async () => {
       if (rangeError) {
@@ -177,23 +293,61 @@ export default function ReportsPage() {
     setPage(1);
   }
 
-  const rows = visibleData?.items.map((row) => (
-    <Table.Tr key={`${row.date}-${row.employee_id}`}>
-      <Table.Td className="mono">{dayjs(row.date).format("DD/MM/YYYY")}</Table.Td>
-      <Table.Td className="mono" c="var(--text-secondary)">
-        {row.employee_code}
-      </Table.Td>
-      <Table.Td fw={600}>{row.full_name}</Table.Td>
-      <Table.Td c="var(--text-secondary)">{row.department}</Table.Td>
-      <Table.Td className="mono" c="var(--text-secondary)">
-        {row.first_check_in ? dayjs(row.first_check_in).format("HH:mm:ss") : "-"}
-      </Table.Td>
-      <Table.Td className="mono" c="var(--text-secondary)">
-        {row.last_check_out ? dayjs(row.last_check_out).format("HH:mm:ss") : "-"}
-      </Table.Td>
-      <Table.Td>{summaryStatusBadge(row.summary_status)}</Table.Td>
-    </Table.Tr>
-  ));
+  const rows = visibleData?.items.flatMap((row) => {
+    const rowKey = buildSessionsKey(row.date, row.employee_id);
+    const isExpanded = expandedKeys.has(rowKey);
+    const sessionsRow = sessionsByKey.get(rowKey);
+    const totalWorkMinutes = sessionsRow?.total_work_minutes ?? 0;
+
+    return [
+      <Table.Tr key={rowKey}>
+        <Table.Td w={40}>
+          <ActionIcon
+            variant="subtle"
+            size="sm"
+            onClick={() => toggleExpand(rowKey)}
+            aria-label={isExpanded ? "Đóng chi tiết session" : "Mở chi tiết session"}
+          >
+            <IconChevronRight
+              size={16}
+              style={{
+                transform: isExpanded ? "rotate(90deg)" : "none",
+                transition: "transform 0.15s ease",
+              }}
+            />
+          </ActionIcon>
+        </Table.Td>
+        <Table.Td className="mono">{dayjs(row.date).format("DD/MM/YYYY")}</Table.Td>
+        <Table.Td className="mono" c="var(--text-secondary)">
+          {row.employee_code}
+        </Table.Td>
+        <Table.Td fw={600}>{row.full_name}</Table.Td>
+        <Table.Td c="var(--text-secondary)">{row.department}</Table.Td>
+        <Table.Td className="mono" c="var(--text-secondary)">
+          {row.first_check_in ? dayjs(row.first_check_in).format("HH:mm:ss") : "-"}
+        </Table.Td>
+        <Table.Td className="mono" c="var(--text-secondary)">
+          {row.last_check_out ? dayjs(row.last_check_out).format("HH:mm:ss") : "-"}
+        </Table.Td>
+        <Table.Td className="mono" c="var(--text-secondary)">
+          {formatWorkMinutes(totalWorkMinutes)}
+        </Table.Td>
+        <Table.Td>{summaryStatusBadge(row.summary_status)}</Table.Td>
+      </Table.Tr>,
+      ...(isExpanded
+        ? [
+            <Table.Tr key={`${rowKey}-detail`}>
+              <Table.Td
+                colSpan={9}
+                style={{ background: "var(--bg-card-subtle, rgba(0,0,0,0.02))" }}
+              >
+                <SessionsDetail sessions={sessionsRow?.sessions ?? []} />
+              </Table.Td>
+            </Table.Tr>,
+          ]
+        : []),
+    ];
+  });
 
   return (
     <Stack gap="lg">
@@ -303,25 +457,27 @@ export default function ReportsPage() {
         <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
           <Table.Thead>
             <Table.Tr>
+              <Table.Th w={40} />
               <Table.Th>Ngày</Table.Th>
               <Table.Th>Mã NV</Table.Th>
               <Table.Th>Họ tên</Table.Th>
               <Table.Th>Phòng ban</Table.Th>
               <Table.Th>Check-in đầu</Table.Th>
               <Table.Th>Check-out cuối</Table.Th>
+              <Table.Th>Giờ làm</Table.Th>
               <Table.Th>Trạng thái</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {rangeError ? (
               <Table.Tr>
-                <Table.Td colSpan={7} ta="center" c="var(--text-secondary)" py="xl">
+                <Table.Td colSpan={9} ta="center" c="var(--text-secondary)" py="xl">
                   Vui lòng điều chỉnh khoảng ngày để xem báo cáo.
                 </Table.Td>
               </Table.Tr>
             ) : isLoading ? (
               <Table.Tr>
-                <Table.Td colSpan={7} ta="center" c="var(--text-secondary)" py="xl">
+                <Table.Td colSpan={9} ta="center" c="var(--text-secondary)" py="xl">
                   Đang tải...
                 </Table.Td>
               </Table.Tr>
@@ -329,7 +485,7 @@ export default function ReportsPage() {
               rows
             ) : (
               <Table.Tr>
-                <Table.Td colSpan={7} ta="center" c="var(--text-secondary)" py="xl">
+                <Table.Td colSpan={9} ta="center" c="var(--text-secondary)" py="xl">
                   Không có dòng báo cáo.
                 </Table.Td>
               </Table.Tr>
